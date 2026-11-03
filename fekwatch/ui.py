@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
 import subprocess
 import sys
@@ -46,7 +47,8 @@ def start_job(root: Path, args: list[str], title: str) -> str:
         try:
             p = subprocess.Popen([sys.executable, "-m", "fekwatch", "--root", str(root), *args],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(root),
-                                 text=True, encoding="utf-8", errors="replace", bufsize=1)
+                                 text=True, encoding="utf-8", errors="replace", bufsize=1,
+                                 env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
             buf = ""
             while True:
                 ch = p.stdout.read(1)
