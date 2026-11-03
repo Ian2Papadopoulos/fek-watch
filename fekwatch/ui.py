@@ -23,6 +23,7 @@ from . import config as cfgmod
 from .citations import ACTION_LABELS_EL, Locator, parse_act_key
 from .normalize import fold
 from .store import Store
+from .glossary import TIP_CSS, as_dict
 
 JOBS: dict[str, dict] = {}
 JOB_LOCK = threading.Lock()
@@ -137,6 +138,7 @@ def search_records(root: Path, q: str, law: str | None, kinds: set[str], article
                 "fek": r["source"]["label"], "date": r["source"].get("issue_date"), "act": r["source"].get("act"),
                 "where": (f"άρθρο {r['article']}" + (f" παρ. {r['par']}" if r.get("par") else "")) if r.get("article") else "",
                 "target": loc, "actions": ", ".join(ACTION_LABELS_EL.get(a, a) for a in r.get("actions", [])),
+                "action_keys": r.get("actions", []),
                 "title": r.get("article_title", "")[:200], "pdf": r["source"]["pdf"], "et_page": r["source"]["et_page"],
                 "text": text[:1500], "inferred": r.get("target_how") not in ("explicit", "alias", ""),
             })
@@ -200,7 +202,8 @@ class Handler(BaseHTTPRequestHandler):
         qs = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/":
-                data = PAGE.encode("utf-8")
+                data = (PAGE.replace("/*TIP_CSS*/", TIP_CSS)
+                        .replace("/*GLOSSARY*/null", json.dumps(as_dict(), ensure_ascii=False))).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
@@ -332,13 +335,15 @@ mark{background:var(--mark);color:inherit;border-radius:3px}
 .lookup{border-left:4px solid var(--accent)}.hide{display:none}
 h2{font-size:18px;margin:6px 0 10px}h3{margin:0;font-size:16px}
 label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
+/*TIP_CSS*/
+.help dt{font-weight:600;margin-top:10px}.help dd{margin:2px 0 0 0;color:var(--muted)}
 @media (max-width:640px){.top{flex-wrap:wrap}.brand{width:100%}.search{width:100%}.filters>select,.filters>input{flex:1 1 40%;width:auto!important}.grid{grid-template-columns:1fr}}
 </style></head><body>
 <header><div class="wrap">
  <div class="top"><div class="brand">FEK Watch</div>
   <form class="search" id="sf"><input type="search" id="q" placeholder="Αναζήτηση: π.χ. «ν. 4759/2020», «αυθαίρετα», «Α 101/2018», «πέργκολα»…" autocomplete="off">
   <button>Αναζήτηση</button></form></div>
- <nav><a data-tab="laws" class="on">Νόμοι</a><a data-tab="search">Αναζήτηση</a><a data-tab="tools">Εργαλεία</a></nav>
+ <nav><a data-tab="laws" class="on">Νόμοι</a><a data-tab="search">Αναζήτηση</a><a data-tab="tools">Εργαλεία</a><a data-tab="help">Βοήθεια</a></nav>
 </div></header>
 <div class="wrap"><main>
 
@@ -362,11 +367,11 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
   <select id="f-law"><option value="">Όλοι οι νόμοι</option></select>
   <input type="text" id="f-art" placeholder="Άρθρο (π.χ. 29)" style="width:130px">
   <input type="text" id="f-year" placeholder="Έτος" style="width:90px">
-  <label class="chk"><input type="checkbox" value="amendment" checked> Τροποποιήσεις</label>
-  <label class="chk"><input type="checkbox" value="derogation"> Παρεκκλίσεις</label>
-  <label class="chk"><input type="checkbox" value="reference"> Αναφορές</label>
-  <label class="chk"><input type="checkbox" value="mention"> Αποφάσεις</label>
-  <label class="chk"><input type="checkbox" value="quoted"> Σε αντικαθιστάμενο κείμενο</label>
+  <label class="chk" data-k="amendment"><input type="checkbox" value="amendment" checked> Τροποποιήσεις</label>
+  <label class="chk" data-k="derogation"><input type="checkbox" value="derogation"> Παρεκκλίσεις</label>
+  <label class="chk" data-k="reference"><input type="checkbox" value="reference"> Αναφορές</label>
+  <label class="chk" data-k="mention"><input type="checkbox" value="mention"> Αποφάσεις</label>
+  <label class="chk" data-k="quoted"><input type="checkbox" value="quoted"> Σε αντικαθιστάμενο κείμενο</label>
  </div>
  <div class="card"><div id="count" class="small muted"></div><div id="results"></div></div>
 </section>
@@ -381,10 +386,24 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
   <button class="sec" data-run="history-rebuild">Επανανάλυση όλου του ιστορικού</button></div></div>
 </section>
 
+<section id="tab-help" class="hide">
+ <div class="card"><h2>Πώς δουλεύει, με απλά λόγια</h2>
+  <p>Κάθε μέρα το FEK Watch διαβάζει τα νέα ΦΕΚ από το Εθνικό Τυπογραφείο και ψάχνει αν κάποιο αλλάζει τους νόμους
+  της λίστας σας. Ό,τι βρίσκει το καταγράφει με σύνδεσμο στη σωστή σελίδα του ΦΕΚ, ώστε να το ελέγξετε με ένα κλικ.</p>
+  <ul><li><b>Νόμοι</b>: οι νόμοι που παρακολουθείτε, με σύνδεσμο στη λίστα τροποποιήσεων και στο ενοποιημένο κείμενο.</li>
+  <li><b>Αναζήτηση</b>: ψάξτε λέξεις («πέργκολα»), έναν νόμο («ν. 4759/2020») ή ένα ΦΕΚ («Α 101/2018»).</li>
+  <li><b>Έλεγχος νέων ΦΕΚ τώρα</b>: κάνει αμέσως τον καθημερινό έλεγχο (γίνεται και αυτόματα στο GitHub).</li>
+  <li>Το <b>?</b> δίπλα σε κάθε ετικέτα εξηγεί τι σημαίνει· περάστε το ποντίκι από πάνω.</li></ul>
+  <p class="small muted">Το εργαλείο είναι βοήθημα: πριν βασιστείτε σε ένα εύρημα, ανοίξτε το ΦΕΚ από τον σύνδεσμο.</p></div>
+ <div class="card help" id="glossary"></div>
+</section>
+
 <div class="card hide" id="jobcard"><div class="row" style="justify-content:space-between"><h3 id="jobtitle"></h3><span id="jobstatus" class="badge"></span></div>
  <div class="log" id="joblog" style="margin-top:8px"></div></div>
 </main></div>
 <script>
+const G=/*GLOSSARY*/null;
+const tip=k=>G[k]?`<span class="tip" tabindex="0" data-tip="${esc(G[k].text)}" aria-label="${esc(G[k].text)}">?</span>`:"";
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=d=>d?d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(0,4):"—";
@@ -392,15 +411,16 @@ let LAWS=[], timer=null;
 async function api(path, body){const r=await fetch(path, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
  const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||r.statusText); return j;}
 function tab(name){$$("nav a").forEach(a=>a.classList.toggle("on",a.dataset.tab===name));
- ["laws","search","tools"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==name));}
+ ["laws","search","tools","help"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==name));}
 $$("nav a").forEach(a=>a.onclick=()=>tab(a.dataset.tab));
 
 async function loadLaws(){const d=await api("/api/laws"); LAWS=d.laws;
  $("#laws").innerHTML=LAWS.map(l=>`<div class="card" style="margin:0">
-  <div class="row" style="justify-content:space-between"><h3>${esc(l.key)}</h3>${l.history?"":'<span class="badge warn">χωρίς ιστορικό</span>'}</div>
+  <div class="row" style="justify-content:space-between"><h3>${esc(l.key)}</h3>${l.history?"":'<span class="badge warn">χωρίς ιστορικό'+tip("history")+'</span>'}</div>
   <div class="small muted">${esc(l.name)}</div>
-  <div class="stats"><div><b>${l.n_feks}</b><span class="small muted">τροπ. ΦΕΚ</span></div><div><b>${l.n_amend}</b><span class="small muted">διατάξεις</span></div>
-   <div><b>${fmt(l.last)}</b><span class="small muted">τελευταία${l.last_label?" ("+esc(l.last_label)+")":""}</span></div></div>
+  <div class="stats"><div><b>${l.n_feks}</b><span class="small muted">τροπ. ΦΕΚ${tip("n_feks")}</span></div><div><b>${l.n_amend}</b><span class="small muted">διατάξεις${tip("n_amend")}</span></div>
+   <div><b>${fmt(l.last)}</b><span class="small muted">τελευταία${l.last_label?" ("+esc(l.last_label)+")":""}${tip("last")}</span></div>
+   <div><b>${l.n_other}</b><span class="small muted">αναφορές${tip("n_other")}</span></div></div>
   <div class="row small">${l.has_page?`<a href="/site/laws/${l.slug}.html" target="_blank">Τροποποιήσεις ↗</a>`:""}
    ${l.has_cons?`<a href="/site/laws/${l.slug}-consolidated.html" target="_blank">Ενοποιημένο κείμενο ↗</a>`:""}
    <a href="#" data-s="${esc(l.key)}">Αναζήτηση</a>
@@ -434,7 +454,8 @@ async function search(){const q=$("#q").value.trim(); tab("search");
  $("#results").innerHTML=d.results.map(r=>`<div class="res"><div class="head">
   <div class="row"><b><a href="${esc(r.pdf)}" target="_blank" onclick="event.stopPropagation()">ΦΕΚ ${esc(r.fek)}</a></b>
    <span class="muted small">${fmt(r.date)} · ${esc(r.act||"")} ${esc(r.where)}</span>
-   <span class="badge ${r.kind==="amendment"?"amend":""}">${esc(r.actions||r.kind_el)}</span>${r.inferred?'<span class="badge warn">συναγόμενο</span>':""}
+   ${r.kind==="amendment"?(r.action_keys.length?r.action_keys:["modify"]).map(a=>`<span class="badge amend">${esc((G[a]||{}).label||a)}${tip(a)}</span>`).join(" ")
+      :`<span class="badge">${esc(r.kind_el)}${tip(r.kind)}</span>`}${r.inferred?'<span class="badge warn">συναγόμενο'+tip("inferred")+'</span>':""}
    <span class="small">${esc(r.law)}${r.target?" → <b>"+esc(r.target)+"</b>":""}</span></div>
   <div class="small muted">${esc(r.title)}</div></div><div class="text">${hl(r.text,q)}</div></div>`).join("");
  $$(".res .head").forEach(h=>h.onclick=()=>h.parentElement.classList.toggle("open"));
@@ -458,5 +479,14 @@ $("#addf").onsubmit=async e=>{e.preventDefault(); try{const r=await api("/api/wa
 $("#fekf").onsubmit=e=>{e.preventDefault(); run({cmd:"fek",label:$("#fek").value.trim()});};
 $$("[data-run]").forEach(b=>b.onclick=()=>{const k=b.dataset.run;
  if(k==="history-rebuild") run({cmd:"history",act:"all",rebuild:true}); else run({cmd:k,act:"all"});});
+$$("label.chk[data-k]").forEach(l=>l.insertAdjacentHTML("beforeend", tip(l.dataset.k)));
+$$("label.chk .tip").forEach(t=>t.onclick=e=>e.preventDefault());
+const groups=[["Τι βρέθηκε",["amendment","derogation","reference","quoted","mention"]],
+ ["Τι κάνει η τροποποίηση",["replace","add","repeal","delete","modify","renumber","extend","suspend","interpret","correct"]],
+ ["Βεβαιότητα",["inferred"]],
+ ["Ενοποιημένο κείμενο",["applied","review","nontextual","changed","note","previous","experimental"]],
+ ["Στήλες και κάρτες",["n_feks","n_amend","last","n_other","history","crosscheck"]]];
+$("#glossary").innerHTML="<h2>Τι σημαίνουν οι ετικέτες</h2>"+groups.map(([t,ks])=>`<h3 style="margin-top:14px">${t}</h3><dl>`+
+ ks.map(k=>`<dt>${esc(G[k].label)}</dt><dd>${esc(G[k].text)}</dd>`).join("")+"</dl>").join("");
 loadLaws();
 </script></body></html>"""

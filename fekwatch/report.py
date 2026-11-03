@@ -11,6 +11,7 @@ from pathlib import Path
 from .citations import ACTION_LABELS_EL, Locator, find_mentions
 from .config import Config, WatchedAct
 from .store import Store, now_iso
+from .glossary import KIND_KEYS, ACTION_KEYS, TIP_CSS, legend_html, tip
 
 KIND_LABEL = {
     "amendment": "Τροποποίηση",
@@ -63,7 +64,7 @@ def esc(s) -> str:
 def _page(title: str, body: str, rel: str = "", updated: str | None = None) -> str:
     return (f"<!doctype html><html lang=\"el\"><head><meta charset=\"utf-8\">"
             f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            f"<title>{esc(title)}</title><style>{CSS}</style></head><body><main>"
+            f"<title>{esc(title)}</title><style>{CSS}{TIP_CSS}</style></head><body><main>"
             f"<p class=\"small\"><a href=\"{rel}index.html\">← Αρχική</a></p>{body}"
             f"<p class=\"small muted\" style=\"margin-top:40px\">Δεδομένα: {esc((updated or now_iso())[:16].replace('T', ' '))} UTC · fek-watch. "
             f"Πηγή: Εθνικό Τυπογραφείο (search.et.gr). Ο αυτόματος εντοπισμός μπορεί να έχει σφάλματα — "
@@ -79,6 +80,15 @@ def _fmt_date(d: str | None) -> str:
 
 def _loc(r: dict) -> str:
     return Locator(**r["locator"]).describe() if r.get("locator") else ""
+
+
+def action_badges(r: dict) -> str:
+    acts = r.get("actions") or ["modify"]
+    return " ".join(f'<span class="badge amend">{esc(ACTION_LABELS_EL.get(a, a))}{tip(a)}</span>' for a in acts)
+
+
+def kind_badge(kind: str) -> str:
+    return f'<span class="badge">{esc(KIND_LABEL.get(kind, kind))}{tip(kind)}</span>'
 
 
 def _actions(r: dict) -> str:
@@ -144,13 +154,13 @@ def _fek_card(src: dict, rs: list[dict], w: WatchedAct, amend: bool) -> str:
         pdf_link = f"<a class=\"small\" href=\"{esc(r['source']['pdf'])}\">σελ. {esc(page)} ↗</a>" if page else ""
         if amend:
             target = esc(_loc(r)) or "—"
-            badge = f"<span class=\"badge amend\">{esc(_actions(r)) or 'Τροποποίηση'}</span>"
+            badge = action_badges(r)
             conf = "" if r.get("target_how") in ("explicit", "alias") else \
-                "<span class=\"badge warn\" title=\"Ο νόμος δεν αναφέρεται ρητά στη διάταξη· συνάγεται από τον τίτλο ή την εισαγωγή του άρθρου\">συναγόμενο</span>"
+                f"<span class=\"badge warn\">συναγόμενο{tip('inferred')}</span>"
             body = _render_instruction(r)
             summary = f"{where} → <b>{target}</b> {badge} {conf} {pdf_link}"
         else:
-            summary = f"{where} {pdf_link} <span class=\"badge\">{esc(KIND_LABEL.get(r['kind'], r['kind']))}</span>"
+            summary = f"{where} {pdf_link} {kind_badge(r['kind'])}"
             if r.get("article_title") and r["kind"] == "mention":
                 summary += f"<div class=\"small muted\">{esc(r['article_title'][:200])}</div>"
             body = f"<div class=\"instr\">{_highlight(r.get('snippet') or r.get('instruction', ''), w)}</div>"
@@ -245,10 +255,11 @@ def law_page(cfg: Config, store: Store, w: WatchedAct) -> tuple[str, dict]:
     if cons.exists():
         links.insert(0, f"<a href=\"{w.slug}-consolidated.html\"><b>Ενοποιημένο κείμενο</b></a>")
     body.append(f"<p class=\"toc\">{' '.join(links)}</p>")
-    body.append(f"<div class=\"grid\"><div class=\"stat\"><b>{n_feks}</b>τροποποιητικά ΦΕΚ</div>"
-                f"<div class=\"stat\"><b>{len(amend)}</b>τροποποιητικές διατάξεις</div>"
-                f"<div class=\"stat\"><b>{esc(_fmt_date(last)) or '—'}</b>τελευταία τροποποίηση</div>"
-                f"<div class=\"stat\"><b>{sum(len(v) for v in other.values())}</b>αναφορές</div></div>")
+    body.append(f"<div class=\"grid\"><div class=\"stat\"><b>{n_feks}</b>τροποποιητικά ΦΕΚ{tip('n_feks')}</div>"
+                f"<div class=\"stat\"><b>{len(amend)}</b>τροποποιητικές διατάξεις{tip('n_amend')}</div>"
+                f"<div class=\"stat\"><b>{esc(_fmt_date(last)) or '—'}</b>τελευταία τροποποίηση{tip('last')}</div>"
+                f"<div class=\"stat\"><b>{sum(len(v) for v in other.values())}</b>αναφορές{tip('n_other')}</div></div>")
+    body.append(legend_html(KIND_KEYS + ACTION_KEYS + ["inferred", "crosscheck"]))
     body.append("<h2 id=\"amend\">Τροποποιήσεις (νεότερες πρώτα)</h2>")
     body.append("".join(_fek_card(src, rs, w, True) for src, rs in _group_by_fek(amend)) or "<p class=\"muted\">Καμία.</p>")
     body.append("<h2 id=\"articles\">Ανά άρθρο του νόμου</h2>")
@@ -258,7 +269,7 @@ def law_page(cfg: Config, store: Store, w: WatchedAct) -> tuple[str, dict]:
         if other[k]:
             body.append(f"<details><summary><b>{esc(KIND_LABEL[k])}</b> ({len(other[k])})</summary>"
                         + "".join(_fek_card(src, rs, w, False) for src, rs in _group_by_fek(other[k])) + "</details>")
-    body.append("<h2 id=\"et\">Διασταύρωση με το χρονολόγιο του Εθνικού Τυπογραφείου</h2>")
+    body.append(f"<h2 id=\"et\">Διασταύρωση με το χρονολόγιο του Εθνικού Τυπογραφείου{tip('crosscheck')}</h2>")
     body.append(_crosscheck(law, amend))
     stats = {"key": w.key, "name": w.name, "fek": fek, "n_feks": n_feks, "n_amend": len(amend), "last": last,
              "n_other": sum(len(v) for v in other.values()), "history": bool(hist)}
@@ -290,14 +301,14 @@ def build_site(cfg: Config, store: Store) -> Path:
             f"<p class=\"muted\">Τελευταίος έλεγχος: {esc((st.get('last_run') or '—')[:16].replace('T', ' '))} UTC · "
             f"παράθυρο {esc(' – '.join(_fmt_date(x) for x in st.get('last_window', [])))}</p>",
             "<h2>Παρακολουθούμενοι νόμοι</h2><table><thead><tr><th>Πράξη</th><th>ΦΕΚ</th>"
-            "<th class=\"num\">Τροπ. ΦΕΚ</th><th class=\"num\">Διατάξεις</th><th>Τελευταία</th><th class=\"num\">Αναφορές</th>"
-            "<th>Ιστορικό</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"]
+            f"<th class=\"num\">Τροπ. ΦΕΚ{tip('n_feks')}</th><th class=\"num\">Διατάξεις{tip('n_amend')}</th><th>Τελευταία{tip('last')}</th>"
+            f"<th class=\"num\">Αναφορές{tip('n_other')}</th><th>Ιστορικό{tip('history')}</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"]
     def rows_for(pairs):
         out = []
         for r, w in pairs:
             src = r["source"]
-            what = (f"<span class=\"badge amend\">{esc(_actions(r)) or 'Τροποποίηση'}</span> {esc(_loc(r))}"
-                    if r["kind"] == "amendment" else f"<span class=\"badge\">{esc(KIND_LABEL.get(r['kind'], r['kind']))}</span>"
+            what = (f"{action_badges(r)} {esc(_loc(r))}"
+                    if r["kind"] == "amendment" else kind_badge(r["kind"])
                     + (f" <span class=\"small muted\">{esc((r.get('article_title') or '')[:110])}</span>" if r["kind"] == "mention" else ""))
             out.append(f"<tr><td>{esc(_fmt_date(src.get('release_date') or src.get('issue_date')))}</td>"
                        f"<td><a href=\"{esc(src['pdf'])}\">{esc(src['label'])}</a><div class=\"small muted\">{esc(src.get('act') or '')}</div></td>"
@@ -313,8 +324,8 @@ def build_site(cfg: Config, store: Store) -> Path:
     items = []
     for r, w in []:
         src = r["source"]
-        what = (f"<span class=\"badge amend\">{esc(_actions(r)) or 'Τροποποίηση'}</span> {esc(_loc(r))}"
-                if r["kind"] == "amendment" else f"<span class=\"badge\">{esc(KIND_LABEL.get(r['kind'], r['kind']))}</span>")
+        what = (f"{action_badges(r)} {esc(_loc(r))}"
+                if r["kind"] == "amendment" else kind_badge(r["kind"]))
         items.append(f"<tr><td>{esc(_fmt_date(src.get('release_date') or src.get('issue_date')))}</td>"
                      f"<td><a href=\"{esc(src['pdf'])}\">{esc(src['label'])}</a><div class=\"small muted\">{esc(src.get('act') or '')}</div></td>"
                      f"<td><a href=\"laws/{w.slug}.html\">{esc(w.key)}</a></td><td>{what}</td></tr>")

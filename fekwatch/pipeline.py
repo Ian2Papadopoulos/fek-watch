@@ -16,12 +16,29 @@ from .pdftext import extract_pdf
 from .store import Store, now_iso
 
 log = logging.getLogger(__name__)
-ATHENS = ZoneInfo("Europe/Athens")
+try:
+    ATHENS = ZoneInfo("Europe/Athens")
+except Exception:  # noqa: BLE001  (Windows without the tzdata package)
+    ATHENS = None
+
+
+def _athens_now() -> datetime:
+    if ATHENS is not None:
+        return datetime.now(ATHENS)
+    # EU rule: UTC+3 from the last Sunday of March to the last Sunday of October (01:00 UTC), else UTC+2
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+
+    def last_sunday(month):
+        d = datetime(now.year, month, 31 if month in (3, 10) else 30, 1, tzinfo=timezone.utc)
+        return d - timedelta(days=(d.weekday() + 1) % 7)
+    summer = last_sunday(3) <= now < last_sunday(10)
+    return now + timedelta(hours=3 if summer else 2)
 PARSER_VERSION = 1
 
 
 def today_athens() -> date:
-    return datetime.now(ATHENS).date()
+    return _athens_now().date()
 
 
 # --------------------------------------------------------------------------- analysis

@@ -25,6 +25,7 @@ from .et_api import EtClient, FekMeta
 from .normalize import fold
 from .pdftext import extract_pdf
 from .store import Store, now_iso
+from .glossary import TIP_CSS, legend_html, tip
 
 # --------------------------------------------------------------------------- model
 
@@ -1231,7 +1232,7 @@ def _render_unit(u: Unit) -> str:
     prev = ""
     if u.history:
         items = "".join(f"<div class=\"prev\"><b>Πριν από [{n.n}] {_e(n.fek)}:</b>\n{_e(t)}</div>" for t, n in u.history)
-        prev = f"<details class=\"prevd\"><summary>προηγούμενες διατυπώσεις ({len(u.history)})</summary>{items}</details>"
+        prev = f"<details class=\"prevd\"><summary>προηγούμενες διατυπώσεις ({len(u.history)}){tip('previous')}</summary>{items}</details>"
     kids = "".join(_render_unit(c) for c in u.children) if u.status != "repealed" else ""
     return f"<div class=\"{' '.join(cls)}\">{body}{prev}{kids}</div>"
 
@@ -1244,24 +1245,29 @@ def _collect_notes(u: Unit, acc: list[Note]):
 
 def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
     from .report import CSS, _fmt_date
+    from .glossary import TIP_CSS, legend_html, tip
     law = res.law
     st = res.stats()
     parts = [f"<h1>{_e(w.key)} — ενοποιημένο κείμενο</h1><p>{_e(law.title or w.name)}</p>"]
     src = res.source or {}
     parts.append(f"<p class=\"small\">Αρχικό κείμενο: <a href=\"{_e(src.get('pdf'))}\">ΦΕΚ {_e(src.get('label'))}</a> · "
                  f"ενοποίηση με τροποποιήσεις που δημοσιεύθηκαν έως {_e(_fmt_date(res.as_of))} · δεδομένα {_e((updated or now_iso())[:10])}</p>")
-    parts.append("<div class=\"fail\" style=\"border-left-color:var(--accent);background:var(--accent-bg)\"><b>Πειραματική λειτουργία.</b> "
+    parts.append(f"<div class=\"fail\" style=\"border-left-color:var(--accent);background:var(--accent-bg)\"><b>Πειραματική λειτουργία.</b>{tip('experimental')} "
                  "Το κείμενο προκύπτει από αυτόματη εφαρμογή των τροποποιήσεων κατά σειρά δημοσίευσης. Δεν λαμβάνονται υπόψη "
                  "μεταγενέστερη έναρξη ισχύος, αναδρομική ισχύς, μεταβατικές διατάξεις ή ακυρώσεις από δικαστήρια. "
                  "Κάθε αλλαγή φέρει σημείωση [n] με το ΦΕΚ και τη σελίδα, και κρατά την προηγούμενη διατύπωση για έλεγχο.</div>")
-    parts.append(f"<div class=\"grid\"><div class=\"stat\"><b>{st['applied']}</b>αλλαγές εφαρμόστηκαν</div>"
-                 f"<div class=\"stat\"><b class=\"{'warn' if st['failed'] else 'ok'}\">{st['failed']}</b>χρειάζονται χειροκίνητο έλεγχο</div>"
+    parts.append(f"<div class=\"grid\"><div class=\"stat\"><b>{st['applied']}</b>αλλαγές εφαρμόστηκαν{tip('applied')}</div>"
+                 f"<div class=\"stat\"><b class=\"{'warn' if st['failed'] else 'ok'}\">{st['failed']}</b>χρειάζονται χειροκίνητο έλεγχο{tip('review')}</div>"
                  f"<div class=\"stat\"><b>{len(law.articles)}</b>άρθρα</div></div>")
+    parts.append(legend_html(["changed", "note", "previous", "applied", "review", "nontextual", "experimental"],
+                             "Πώς διαβάζεται αυτή η σελίδα"))
     if law.status == "repealed":
         parts.append("<div class=\"fail\"><b>Η πράξη έχει καταργηθεί</b> (βλ. σημειώσεις).</div>")
     if res.failed:
-        parts.append(f"<h2 id=\"review\">Χρειάζονται χειροκίνητο έλεγχο ({len(res.failed)})</h2>"
-                     "<p class=\"small muted\">Οι παρακάτω τροποποιήσεις εντοπίστηκαν αλλά <b>δεν</b> εφαρμόστηκαν στο κείμενο.</p>")
+        parts.append(f"<h2 id=\"review\">Χρειάζονται χειροκίνητο έλεγχο ({len(res.failed)}){tip('review')}</h2>"
+                     "<p class=\"small\">Οι παρακάτω τροποποιήσεις εντοπίστηκαν, αλλά το εργαλείο <b>δεν</b> ήταν βέβαιο πώς να τις "
+                     "περάσει στο κείμενο, οπότε <b>δεν</b> τις εφάρμοσε. Το κείμενο πιο κάτω τις παραλείπει μέχρι να τις ελέγξετε: "
+                     "ανοίξτε το ΦΕΚ και δείτε τι αλλάζει. Ο «Λόγος» εξηγεί τι δεν ταίριαξε.</p>")
         for f in res.failed:
             r = f.record
             parts.append(f"<div class=\"fail\"><b><a href=\"{_e(r['source']['pdf'])}\">ΦΕΚ {_e(r['source']['label'])}</a></b> "
@@ -1296,7 +1302,7 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
         parts.append(f"<div class=\"{cls}\">{head}{body}{prev}{nl}</div>")
     return (f"<!doctype html><html lang=\"el\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{_e(w.key)} — ενοποιημένο κείμενο</title>"
-            f"<style>{CSS}{CONS_CSS}</style></head><body><main><p class=\"small\"><a href=\"../index.html\">← Αρχική</a> · "
+            f"<style>{CSS}{CONS_CSS}{TIP_CSS}</style></head><body><main><p class=\"small\"><a href=\"../index.html\">← Αρχική</a> · "
             f"<a href=\"{_e(w.slug)}.html\">τροποποιήσεις</a></p>{''.join(parts)}</main></body></html>")
 
 
