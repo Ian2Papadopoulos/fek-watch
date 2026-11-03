@@ -192,6 +192,12 @@ def cmd_consolidate(args):
     return 0
 
 
+def cmd_ui(args):
+    from .ui import serve
+    serve(Path(args.root).resolve(), port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="fekwatch", description="Monitor the Greek Government Gazette (ΦΕΚ) for amendments.")
     ap.add_argument("--root", default=".", help="project directory (with watchlist.toml)")
@@ -224,6 +230,11 @@ def main(argv=None):
     p.add_argument("act", help='e.g. "ν. 4495/2017" or "all"')
     p.add_argument("--as-of", help="YYYY-MM-DD: apply amendments published up to this date")
     p.set_defaults(func=cmd_consolidate)
+
+    p = sub.add_parser("ui", help="open the local web interface (search, watchlist, run checks)")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-browser", action="store_true")
+    p.set_defaults(func=cmd_ui)
 
     p = sub.add_parser("site", help="regenerate the HTML report")
     p.set_defaults(func=cmd_site)

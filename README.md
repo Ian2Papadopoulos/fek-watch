@@ -75,6 +75,19 @@ aliases = []          # names used instead of the number, e.g. for codes
 Or use the command line: `python -m fekwatch watch add "ν. 4759/2020" --name "..."`. Then run `history` for
 the new law. Supported acts: laws (ν.), presidential decrees (π.δ.), ν.δ., α.ν., β.δ. and ΠΝΠ.
 
+## Local interface (search bar, watchlist, buttons)
+
+Double-click **`start-ui.bat`** (Windows) or **`start-ui.command`** (Mac), or run `python -m fekwatch ui`.
+A page opens at http://127.0.0.1:8765, reachable only from your own computer. From it you can:
+
+- **search** every stored amendment and reference: free text ("αυθαίρετα", "πέργκολα"), a law
+  ("ν. 4759/2020", which also offers to start watching it), or a FEK ("Α 101/2018"), with filters by law,
+  article, year and type;
+- **add or remove** watched laws and load their history with one click;
+- run **"check new FEKs now"**, rebuild consolidated texts, or ask **"what does this FEK change?"**, with live
+  progress shown on the page;
+- open the amendment list and the consolidated text of each law.
+
 ## Using it locally
 
 ```bash

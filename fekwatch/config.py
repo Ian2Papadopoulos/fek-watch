@@ -87,3 +87,17 @@ def add_law_to_file(root: Path, act: str, name: str = "", aliases: list[str] | N
     block = f'\n[[law]]\nact = "{w.key}"\nname = "{name.replace(chr(34), chr(92) + chr(34))}"\naliases = [{al}]\n'
     path.write_text(text.rstrip() + "\n" + block, encoding="utf-8")
     return w
+
+
+def remove_law_from_file(root: Path, act: str) -> bool:
+    """Remove a [[law]] block from watchlist.toml (comments elsewhere are kept)."""
+    kind, num, year = parse_act_key(act)
+    key = act_key(kind, num, year)
+    path = Path(root) / "watchlist.toml"
+    text = path.read_text(encoding="utf-8")
+    parts = re.split(r"(?m)^(?=\[\[law\]\])", text)
+    keep = [p for p in parts if not re.search(r'act\s*=\s*"' + re.escape(key) + '"', p)]
+    if len(keep) == len(parts):
+        return False
+    path.write_text("".join(keep).rstrip() + "\n", encoding="utf-8")
+    return True
