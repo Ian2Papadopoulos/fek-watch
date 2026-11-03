@@ -1,0 +1,2 @@
+requests>=2.31,<3
+pymupdf>=1.24,<3

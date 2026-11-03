@@ -1,0 +1,36 @@
+# FEK Watch — acts to monitor.
+#
+# Add an act with:   python -m fekwatch watch add "ν. 4759/2020" --name "..."
+# then load its full amendment history with:   python -m fekwatch history "ν. 4759/2020"
+#
+# `aliases` are names used in the gazette instead of the number (e.g. codes), so that
+# "Στο άρθρο 12 του Κώδικα ..." is attributed to the right act even without "ν. NNNN/YYYY".
+
+[settings]
+# Each daily run re-checks issues *released* in the last N days, so issues that ET uploads
+# late (release date after issue date) or that failed to download are never missed.
+lookback_days = 14
+# Issues downloaded and analysed in full. Laws, presidential decrees and acts of
+# legislative content (the only acts that can amend a law) are published in Τεύχος Α'.
+analyze_groups = ["Α"]
+# Issues searched (ET full-text search) for *mentions* of watched acts, e.g. ministerial
+# decisions issued under them (Β'), urban plans (Δ'), environmental/urban decisions (Α.Α.Π.).
+mention_groups = ["Β", "Δ", "Α.Α.Π."]
+# Plain references (not amendments) below this confidence are ignored.
+min_reference_confidence = 0.8
+site_title = "FEK Watch — παρακολούθηση τροποποιήσεων"
+
+[[law]]
+act = "ν. 4495/2017"
+name = "Έλεγχος και προστασία του Δομημένου Περιβάλλοντος και άλλες διατάξεις"
+aliases = []
+
+[[law]]
+act = "ν. 5306/2026"
+name = "Κύρωση Κώδικα Χωροταξίας - Πολεοδομίας «Νικόλαος Ταγαράς»"
+aliases = ["Κώδικα Χωροταξίας - Πολεοδομίας", "Κώδικα Χωροταξίας-Πολεοδομίας", "Κώδικας Χωροταξίας - Πολεοδομίας"]
+
+[[law]]
+act = "ν. 4067/2012"
+name = "Νέος Οικοδομικός Κανονισμός (ΝΟΚ)"
+aliases = ["Νέου Οικοδομικού Κανονισμού", "Νέος Οικοδομικός Κανονισμός"]

@@ -1,0 +1,20 @@
+[project]
+name = "fek-watch"
+version = "0.1.0"
+description = "Monitor the Greek Government Gazette (ΦΕΚ) for amendments to selected laws, list every amending FEK, and build checkable consolidated texts."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["requests>=2.31,<3", "pymupdf>=1.24,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+fekwatch = "fekwatch.cli:main"
+
+[tool.setuptools]
+packages = ["fekwatch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

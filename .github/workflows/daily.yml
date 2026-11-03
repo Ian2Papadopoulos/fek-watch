@@ -1,0 +1,98 @@
+name: Daily FEK check
+
+on:
+  schedule:
+    # 20:17 UTC = 22:17/23:17 Athens: after the day's issues are released.
+    - cron: "17 20 * * *"
+    # Second pass the next morning catches issues uploaded late in the evening.
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "What to run"
+        type: choice
+        options: [daily, history, consolidate, site]
+        default: daily
+      act:
+        description: 'For history/consolidate: an act such as "ν. 4759/2020", or "all"'
+        required: false
+        default: "all"
+
+permissions:
+  contents: write   # commit updated data/ and site/
+  issues: write     # open an issue when an amendment is found
+  pages: write
+  id-token: write
+
+concurrency:
+  group: fek-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore extracted-text cache
+        uses: actions/cache@v4
+        with:
+          path: cache/text
+          key: fek-text-${{ github.run_id }}
+          restore-keys: fek-text-
+
+      - name: Run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional e-mail digest (Settings → Secrets and variables → Actions)
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          COMMAND: ${{ github.event.inputs.command || 'daily' }}
+          ACT: ${{ github.event.inputs.act || 'all' }}
+        run: |
+          if [ "$COMMAND" = "daily" ] || [ "$COMMAND" = "site" ]; then
+            python -m fekwatch "$COMMAND"
+          else
+            python -m fekwatch "$COMMAND" "$ACT"
+          fi
+          # keep the consolidated texts in sync with the newest amendments
+          if [ "$COMMAND" = "daily" ]; then python -m fekwatch consolidate all || true; fi
+
+      - name: Commit results
+        run: |
+          git config user.name "fek-watch bot"
+          git config user.email "fek-watch@users.noreply.github.com"
+          git add data site
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "FEK check $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - name: Upload site for GitHub Pages
+        if: ${{ vars.PAGES_ENABLED == 'true' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-pages:
+    needs: check
+    if: ${{ vars.PAGES_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/deploy-pages@v4
