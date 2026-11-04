@@ -1268,15 +1268,16 @@ CONS_CSS = """
 .toc .toch{margin:6px 0 2px}.toc .toch.l0{font-weight:700;margin-top:12px}.toc .toch.l1{padding-left:12px;font-weight:600}
 .toc .toch.l2{padding-left:24px}.toc .toch.l3,.toc .toch.l4{padding-left:36px}
 .toc .toca{display:inline-block;min-width:34px;margin:2px 2px 0 0;font-size:13px}
-.art{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:14px 0}
-.art.changed{border-left:4px solid var(--amend)}.art.repealed{opacity:.6}
+.art{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin:16px 0}
+.art.changed{box-shadow:inset 3px 0 0 var(--accent)}.art.repealed{opacity:.6}
 .arth{font-weight:600;text-align:center}.artt{font-weight:600;text-align:center;margin-bottom:8px}
-.u{margin:4px 0}.u.case{margin-left:22px}.u.case .u.case{margin-left:22px}.u.text{margin-left:0}
-.u.changed>.ut{background:var(--amend-bg);border-radius:4px}.u.added>.ut{background:var(--accent-bg)}
+.u{margin:4px 0;overflow-wrap:anywhere}.u.case{margin-left:22px}.u.case .u.case{margin-left:22px}.u.text{margin-left:0}
+.u.changed>.ut{background:var(--changed-bg);border-radius:4px;padding:0 2px}.u.added>.ut{background:var(--added-bg);border-radius:4px;padding:0 2px}
 .rep{color:var(--muted);font-style:italic}sup a{text-decoration:none;font-size:11px}
-.notes{font-size:13px;color:var(--muted);border-top:1px dashed var(--line);margin-top:8px;padding-top:6px}
-.notes li{margin:2px 0}.prev{font-size:13px;background:var(--q);padding:6px 10px;white-space:pre-wrap;border-radius:6px}
-.fail{border-left:4px solid var(--warn);background:var(--warn-bg);padding:8px 12px;margin:8px 0;border-radius:6px}
+.notes{font-size:13px;color:var(--muted);border-top:1px solid var(--rule);margin-top:12px;padding-top:10px}
+.notes li{margin:2px 0}.prev{font-size:13px;background:var(--raised);padding:10px 14px;margin:6px 0;white-space:pre-wrap;border-radius:8px;overflow-wrap:anywhere}
+.fail{background:var(--warn-bg);padding:14px 18px;margin:10px 0;border-radius:10px}
+.fail.info{background:var(--raised)}
 details.prevd summary{cursor:pointer;font-size:12px;color:var(--muted)}
 """
 
@@ -1312,7 +1313,7 @@ def _collect_notes(u: Unit, acc: list[Note]):
 
 
 def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
-    from .report import CSS, _fmt_date
+    from .report import CSS, FONT_LINK, _fmt_date, bar
     from .glossary import TIP_CSS, legend_html, tip
     law = res.law
     st = res.stats()
@@ -1320,7 +1321,7 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
     src = res.source or {}
     parts.append(f"<p class=\"small\">Αρχικό κείμενο: <a href=\"{_e(src.get('pdf'))}\">ΦΕΚ {_e(src.get('label'))}</a> · "
                  f"ενοποίηση με τροποποιήσεις που δημοσιεύθηκαν έως {_e(_fmt_date(res.as_of))} · δεδομένα {_e((updated or now_iso())[:10])}</p>")
-    parts.append(f"<div class=\"fail\" style=\"border-left-color:var(--accent);background:var(--accent-bg)\"><b>Πειραματική λειτουργία.</b>{tip('experimental')} "
+    parts.append(f"<div class=\"fail info\"><b>Πειραματική λειτουργία.</b>{tip('experimental')} "
                  "Το κείμενο προκύπτει από αυτόματη εφαρμογή των τροποποιήσεων κατά σειρά δημοσίευσης. Δεν λαμβάνονται υπόψη "
                  "μεταγενέστερη έναρξη ισχύος, αναδρομική ισχύς, μεταβατικές διατάξεις ή ακυρώσεις από δικαστήρια. "
                  "Κάθε αλλαγή φέρει σημείωση [n] με το ΦΕΚ και τη σελίδα, και κρατά την προηγούμενη διατύπωση για έλεγχο.</div>")
@@ -1380,7 +1381,7 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
             nl = "<ol class=\"notes\" style=\"list-style:none;padding-left:0\">" + "".join(
                 f"<li id=\"n{n.n}\">[{n.n}] {_e(n.what)} — {_e(n.where)} {_e(n.act)} "
                 f"(<a href=\"{_e(n.pdf)}\">ΦΕΚ {_e(n.fek)}, {_e(_fmt_date(n.date))}</a>)"
-                f"{(' <span class=warn>⚠ ' + _e(n.warning) + '</span>') if n.warning else ''}</li>" for n in notes) + "</ol>"
+                f"{(' <span class=warn>Προσοχή: ' + _e(n.warning) + '</span>') if n.warning else ''}</li>" for n in notes) + "</ol>"
         parts.append(f"<div class=\"{cls}\">{head}{body}{prev}{nl}</div>")
     if law.annexes:
         parts.append("<h2 id=\"annexes\">Παραρτήματα</h2><p class=\"small muted\">Τα παραρτήματα εμφανίζονται όπως "
@@ -1390,8 +1391,8 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
                          f"<div class=\"prev\">{_e(chr(10).join(lines))}</div></details>")
     return (f"<!doctype html><html lang=\"el\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{_e(w.key)} — ενοποιημένο κείμενο</title>"
-            f"<style>{CSS}{CONS_CSS}{TIP_CSS}</style></head><body><main><p class=\"small\"><a href=\"../index.html\">← Αρχική</a> · "
-            f"<a href=\"{_e(w.slug)}.html\">τροποποιήσεις</a></p>{''.join(parts)}</main></body></html>")
+            f"{FONT_LINK}<style>{CSS}{CONS_CSS}{TIP_CSS}</style></head><body>"
+            f"{bar('../', [('Τροποποιήσεις ' + w.key, w.slug + '.html')])}<main>{''.join(parts)}</main></body></html>")
 
 
 def _any_notes(u: Unit) -> bool:

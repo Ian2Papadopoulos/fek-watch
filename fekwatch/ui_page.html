@@ -44,6 +44,12 @@ input,select,button{font:inherit;color:inherit}
 .nav svg{width:18px;height:18px;flex:none}
 .side-foot{margin-top:auto;padding:12px 10px;color:var(--muted);font-size:var(--fs-small);line-height:1.5}
 .side-foot b{display:block;color:var(--text);font-weight:500}
+.side-foot .link{margin-top:6px;font-size:var(--fs-small)}
+.link:disabled{color:var(--muted);cursor:default;text-decoration:none}
+.stamp{display:none;margin:8px 0 0;color:var(--muted);font-size:var(--fs-small)}
+.new{display:inline-flex;align-items:center;gap:6px;margin-left:10px;color:var(--accent);font-size:var(--fs-small);font-weight:500;vertical-align:1px}
+.new::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.progress{color:var(--muted);white-space:nowrap}.progress b{color:var(--text);font-weight:500}
 .topbar{position:fixed;z-index:10;background:var(--ground);top:0;left:var(--sidebar);right:var(--sheet-inset);height:var(--topbar);display:flex;align-items:center;justify-content:center}
 .search{position:relative;width:min(620px,100%)}
 .search svg{position:absolute;left:12px;top:50%;width:16px;height:16px;transform:translateY(-50%);color:var(--muted);pointer-events:none}
@@ -181,6 +187,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
  .mtabs a.on{background:var(--active);color:var(--text)}
  .sheet{margin:0 8px 8px;padding:24px 24px 40px;min-height:calc(100vh - 64px)}
  .msearch{display:block;margin-bottom:20px}
+ .stamp{display:block}
  .row2{grid-template-columns:1fr}
  .srow{grid-template-columns:1fr;gap:16px}
 }
@@ -212,7 +219,7 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
  .laws,.laws tbody{display:block}
  .laws tr{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:16px 0;border-top:1px solid var(--rule)}
  .laws tr:first-child{border-top:0}
- .laws td{display:block;padding:0!important;border:0}
+ .laws td{display:block;padding:0!important;border:0;width:auto!important}
  .laws td.c-prov,.laws td.c-refs{display:none}
  .laws td.c-last{text-align:right}
  .laws td.c-stats{display:block;grid-column:1/-1;color:var(--muted);font-size:13px}
@@ -241,7 +248,9 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
   <a data-tab="tools"><svg><use href="#i-tools"/></svg>Εργαλεία</a>
   <a data-tab="help"><svg><use href="#i-help"/></svg>Βοήθεια</a>
  </nav>
- <div class="side-foot"><b>Τελευταίος έλεγχος</b><span id="lastrun">—</span><div id="syncmsg" style="margin-top:8px"></div></div>
+ <div class="side-foot"><b>Τελευταίος έλεγχος</b><span class="lastrun">—</span>
+  <div><button class="link b-sync" title="Φέρνει τα επίσημα ευρήματα του τελευταίου ελέγχου από το GitHub">Ενημέρωση</button></div>
+  <div id="syncmsg" style="margin-top:8px"></div></div>
 </aside>
 <div class="topbar"><form class="search" id="sf" role="search"><svg><use href="#i-search"/></svg>
  <input type="search" id="q" aria-label="Αναζήτηση" placeholder="Αναζήτηση: πέργκολα, ν. 4759/2020, Α 101/2018, άρθρο 29…" autocomplete="off"></form></div>
@@ -257,7 +266,8 @@ mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
  </section>
 
  <section id="tab-laws">
-  <div class="title"><div><h1>Νόμοι που παρακολουθείτε</h1><p id="finding">Φόρτωση…</p></div>
+  <div class="title"><div><h1>Νόμοι που παρακολουθείτε</h1><p id="finding">Φόρτωση…</p>
+   <p class="stamp">Τελευταίος έλεγχος: <span class="lastrun">—</span> · <button class="link b-sync">Ενημέρωση</button></p></div>
    <div class="actions"><a class="btn" href="/site/index.html" target="_blank">Πλήρης αναφορά</a><button class="btn primary" id="b-daily">Έλεγχος νέων ΦΕΚ</button></div></div>
   <div class="tablewrap"><table class="laws">
    <thead><tr><th>Πράξη</th><th class="num">Τροποποιήσεις<span data-tip-k="n_amend"></span></th>
@@ -340,7 +350,16 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const tip=k=>G[k]?`<span class="tip" tabindex="0" data-tip="${esc(G[k].text)}" aria-label="${esc(G[k].text)}">?</span>`:"";
 const fmt=d=>d?d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(0,4):"—";
 const plural=(n,one,many)=>`${n} ${n===1?one:many}`;
-let LAWS=[], timer=null;
+let LAWS=[], timer=null, JOB=null;
+// "New since your last visit": compare with what was on screen when the app was last closed.
+const SEEN_KEY="fekwatch.seen";
+const PREV=(()=>{try{return JSON.parse(localStorage.getItem(SEEN_KEY)||"null");}catch(e){return null;}})();
+let SNAP=null;
+addEventListener("pagehide",()=>{try{if(SNAP) localStorage.setItem(SEEN_KEY,JSON.stringify(SNAP));}catch(e){}});
+const lawCount=l=>l.n_amend+l.n_other;
+const newFor=l=>PREV&&PREV.laws&&l.key in PREV.laws?Math.max(0,lawCount(l)-PREV.laws[l.key]):0;
+const fekId=r=>r.fek+"|"+r.law;
+const isNewFek=r=>!!(PREV&&PREV.feks&&!PREV.feks.includes(fekId(r)));
 async function api(path, body){const r=await fetch(path, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
  const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||r.statusText); return j;}
 
@@ -350,6 +369,13 @@ function tab(name){$$("[data-tab]").forEach(a=>{const on=a.dataset.tab===name; a
 $$("[data-tab]").forEach(a=>{a.href="#"+a.dataset.tab; a.onclick=e=>{e.preventDefault(); tab(a.dataset.tab); if(a.dataset.tab==="search") search();};});
 $$("[data-tip-k]").forEach(s=>s.outerHTML=tip(s.dataset.tipK));
 
+function jobFor(l){
+ if(!JOB||JOB.status!=="running") return "";
+ const [cmd,act]=JOB.args; if(act!==l.key) return "";
+ if(cmd==="history"){const m=[...JOB.log].reverse().map(x=>x.match(/\[(\d+)\/(\d+)\]/)).find(Boolean);
+  return `<span class="progress">Φόρτωση ιστορικού…${m?` <b class="num">${m[1]}/${m[2]}</b> ΦΕΚ`:""}</span>`;}
+ if(cmd==="consolidate") return `<span class="progress">Ενοποίηση…</span>`;
+ return "";}
 function lawRow(l){
  const menu=`<details class="menu"><summary aria-label="Περισσότερα για ${esc(l.key)}"><svg width="18" height="18"><use href="#i-more"/></svg></summary><div class="pop">
    <button data-s="${esc(l.key)}">Αναζήτηση στον νόμο</button>
@@ -359,24 +385,28 @@ function lawRow(l){
  const acts=l.history
   ? `${l.has_cons?`<a href="/site/laws/${l.slug}-consolidated.html" target="_blank">Ενοποιημένο κείμενο</a>`:""}${l.has_page?`<a href="/site/laws/${l.slug}.html" target="_blank">Τροποποιήσεις</a>`:""}`
   : `<span class="pill warn">Χωρίς ιστορικό${tip("history")}</span><button class="btn" data-h="${esc(l.key)}">Φόρτωση</button>`;
+ const busy=jobFor(l), nw=newFor(l);
  const n=v=>v?v:`<span class="zero">0</span>`;
- return `<tr><td class="c-id"><div class="law-key">${esc(l.key)}</div><div class="law-name">${esc(l.name)}</div></td>
+ return `<tr data-key="${esc(l.key)}"><td class="c-id"><div class="law-key">${esc(l.key)}${nw?`<span class="new" title="Από την τελευταία σας επίσκεψη">${plural(nw,"νέο εύρημα","νέα ευρήματα")}</span>`:""}</div><div class="law-name">${esc(l.name)}</div></td>
   <td class="num c-prov">${l.n_amend?plural(l.n_amend,"διάταξη","διατάξεις"):'<span class="zero">0</span>'}${l.n_feks?`<span class="sub">σε ${plural(l.n_feks,"ΦΕΚ","ΦΕΚ")}</span>`:""}</td>
   <td class="num c-last">${l.last?`${fmt(l.last)}<span class="sub">ΦΕΚ ${esc(l.last_label)}</span>`:`<span class="zero">—</span>`}</td>
   <td class="num c-refs">${n(l.n_other)}</td>
   <td class="c-stats">${plural(l.n_feks,"ΦΕΚ","ΦΕΚ")} · ${plural(l.n_amend,"διάταξη","διατάξεις")} · ${plural(l.n_other,"αναφορά","αναφορές")}</td>
-  <td class="c-act"><div class="rowact">${acts}${menu}</div></td></tr>`;}
+  <td class="c-act"><div class="rowact">${busy||acts}${menu}</div></td></tr>`;}
 
 async function loadLaws(){const d=await api("/api/laws"); LAWS=d.laws;
  $("#lawrows").innerHTML=LAWS.map(lawRow).join("")||`<tr><td colspan="5" class="empty">Δεν παρακολουθείτε ακόμη κανέναν νόμο. Προσθέστε έναν από τη φόρμα παρακάτω.</td></tr>`;
  const latest=LAWS.filter(l=>l.last).sort((a,b)=>b.last.localeCompare(a.last))[0];
  const missing=LAWS.filter(l=>!l.history).length;
  $("#finding").innerHTML=(latest?`Πιο πρόσφατη τροποποίηση: <b>${esc(latest.key)}</b> από το ΦΕΚ <b>${esc(latest.last_label)}</b>, ${fmt(latest.last)}.`:"Δεν έχει βρεθεί ακόμη τροποποίηση.")
-  +(missing?` ${missing===1?"Ένας νόμος δεν έχει":missing+" νόμοι δεν έχουν"} ακόμη ιστορικό.`:"");
+  +(missing?` ${missing===1?"Ένας νόμος δεν έχει":missing+" νόμοι δεν έχουν"} ακόμη ιστορικό.`:"")
+  +((n=>n?` <b>${n===1?"Ένας νόμος έχει":n+" νόμοι έχουν"} νέα ευρήματα</b> από την τελευταία σας επίσκεψη.`:"")(LAWS.filter(newFor).length));
  $("#recent").innerHTML=d.recent.map(r=>`<li><span class="date num">${fmt(r.date)}</span>
-   <div><a class="fek" href="${esc(r.pdf)}" target="_blank">ΦΕΚ ${esc(r.fek)}</a><div class="what">${esc(r.act||"")} → ${esc(r.law)}</div></div>
+   <div><a class="fek" href="${esc(r.pdf)}" target="_blank">ΦΕΚ ${esc(r.fek)}</a>${isNewFek(r)?'<span class="new">νέο</span>':""}<div class="what">${esc(r.act||"")} → ${esc(r.law)}</div></div>
    <span class="n num">${plural(r.n,"διάταξη","διατάξεις")}</span></li>`).join("")||`<li class="empty">Καμία τροποποίηση ακόμη.</li>`;
- $("#lastrun").textContent=d.last_run?new Date(d.last_run).toLocaleString("el-GR",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+ const stamp=d.last_run?new Date(d.last_run).toLocaleString("el-GR",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+ $$(".lastrun").forEach(e=>e.textContent=stamp);
+ SNAP={laws:Object.fromEntries(LAWS.map(l=>[l.key,lawCount(l)])),feks:d.recent.map(fekId)};
  const cur=$("#f-law").value;
  $("#f-law").innerHTML='<option value="">Όλοι οι νόμοι</option>'+LAWS.map(l=>`<option>${esc(l.key)}</option>`).join(""); $("#f-law").value=cur;
  const closeMenu=b=>{const m=b.closest("details"); if(m) m.open=false;};
@@ -385,7 +415,11 @@ async function loadLaws(){const d=await api("/api/laws"); LAWS=d.laws;
  $$("[data-c]").forEach(b=>b.onclick=()=>{closeMenu(b); run({cmd:"consolidate",act:b.dataset.c});});
  $$("[data-r]").forEach(b=>b.onclick=async()=>{closeMenu(b); if(!confirm("Αφαίρεση του "+b.dataset.r+" από τη λίστα; Τα δεδομένα του μένουν στον φάκελο data/.")) return;
    syncNote(await api("/api/unwatch",{act:b.dataset.r})); loadLaws();});
- const running=d.jobs.find(j=>j.status==="running"); if(running && !timer) follow(running.id);}
+ const running=d.jobs.find(j=>j.status==="running"); if(running && !timer) follow(running.id);
+ syncButtons();}
+function syncButtons(){const busy=JOB&&JOB.status==="running"&&JOB.args[0]==="sync";
+ $$(".b-sync").forEach(b=>{b.disabled=!!busy; b.textContent=busy?"Ενημέρωση…":"Ενημέρωση";});}
+$$(".b-sync").forEach(b=>b.onclick=()=>run({cmd:"sync"}));
 document.addEventListener("click",e=>$$("details.menu[open]").forEach(m=>{if(!m.contains(e.target)) m.open=false;}));
 
 function syncNote(r){if(r && r.message) $("#syncmsg").textContent=r.message;}
@@ -394,6 +428,10 @@ function follow(id){$("#jobcard").classList.remove("hide"); clearInterval(timer)
  const tick=async()=>{const j=await api("/api/jobs/"+id); $("#jobtitle").textContent=j.title;
   const st={running:"Σε εξέλιξη",done:"Ολοκληρώθηκε",failed:"Απέτυχε"}[j.status]; $("#jobstatus").textContent=st;
   $("#jobstatus").className="pill"+(j.status==="failed"?" warn":""); const L=$("#joblog"); L.textContent=j.log.join("\n")||"Ξεκινά…"; L.scrollTop=L.scrollHeight;
+  JOB=j; syncButtons();
+  const l=LAWS.find(x=>x.key===j.args[1]); const row=l&&$(`#lawrows tr[data-key="${CSS.escape(l.key)}"] .rowact`);
+  if(row && j.status==="running"){const p=jobFor(l); const cur=row.querySelector(".progress");
+   if(p){if(cur) cur.outerHTML=p; else row.innerHTML=p+row.querySelector("details.menu").outerHTML;}}
   if(j.status!=="running"){clearInterval(timer); timer=null; loadLaws();}};
  tick(); timer=setInterval(tick,1000);}
 $("#jobclose").onclick=()=>$("#jobcard").classList.add("hide");
@@ -445,8 +483,6 @@ $("#addf").onsubmit=async e=>{e.preventDefault(); try{const r=await api("/api/wa
 $("#fekf").onsubmit=e=>{e.preventDefault(); run({cmd:"fek",label:$("#fek").value.trim()});};
 $$("[data-run]").forEach(b=>b.onclick=()=>{const k=b.dataset.run;
  if(k==="history-rebuild") run({cmd:"history",act:"all",rebuild:true}); else run({cmd:k,act:"all"});});
-$$("label.chip[data-k]").forEach(l=>l.insertAdjacentHTML("beforeend", tip(l.dataset.k)));
-$$("label.chip .tip").forEach(t=>t.onclick=e=>e.preventDefault());
 const groups=[["Τι βρέθηκε","Το είδος κάθε ευρήματος.",["amendment","derogation","reference","quoted","mention"]],
  ["Τι κάνει η τροποποίηση","Οι ετικέτες δίπλα σε κάθε διάταξη.",["replace","add","repeal","delete","modify","renumber","extend","suspend","interpret","correct"]],
  ["Βεβαιότητα","Πότε χρειάζεται δεύτερη ματιά.",["inferred"]],
