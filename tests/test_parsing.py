@@ -63,3 +63,12 @@ def test_ordinals_and_letters():
 def test_actions():
     assert [a[0] for a in find_actions(fold("επέρχονται οι ακόλουθες τροποποιήσεις"))] == ["modify"]
     assert [a[0] for a in find_actions(fold("καταργούνται"))] == ["repeal"]
+
+
+def test_decision_keys_and_mentions():
+    from fekwatch.config import watched_from
+    w = watched_from("ΥΑ ΥΠΕΝ/ΔΑΟΚΑ/66006/2360/2023")
+    assert (w.kind, w.number, w.year, w.search_text) == ("υ.α.", "ΥΠΕΝ/ΔΑΟΚΑ/66006/2360", 2023, "66006/2360")
+    t = normalize_chars("τροποποιείται η υπό στοιχεία ΥΠΕΝ/ΔΑΟΚΑ/66006/2360/22.6.2023 απόφαση (Β’ 3985)")
+    assert find_mentions(t, w.kind, w.number, w.year)[0][2] == 1.0
+    assert find_mentions("αριθμ. 166006/2360", w.kind, w.number, w.year) == []

@@ -88,11 +88,39 @@ class ActRef:
 
 
 def act_key(kind: str, number: str | int, year: int) -> str:
+    if kind == "υ.α.":
+        return f"υ.α. {number}/{int(year)}"
     return f"{kind} {int(number)}/{int(year)}"
+
+
+# Ministerial decisions are identified by a protocol number: "ΥΑ ΥΠΕΝ/ΔΑΟΚΑ/66006/2360/2023"
+_DECISION_PREFIX_RE = re.compile(r"^\s*(?:κ\.?\s?υ\.?\s?α\.?|υ\.?\s?α\.?|υπουργικη\s+αποφαση|κοινη\s+υπουργικη\s+αποφαση|αποφαση)\s+")
+
+
+def parse_decision(s: str) -> tuple[str, str, int] | None:
+    from .normalize import normalize_chars
+    f = fold(s.strip())
+    m = _DECISION_PREFIX_RE.match(f)
+    if not m:
+        return None
+    proto = normalize_chars(s.strip()[m.end():]).upper().replace(" ", "")
+    parts = [p for p in proto.split("/") if p]
+    if len(parts) < 2 or not re.fullmatch(r"(19|20)\d\d", parts[-1]):
+        raise ValueError(f"Γράψτε την απόφαση με το έτος στο τέλος, π.χ. «ΥΑ ΥΠΕΝ/ΔΑΟΚΑ/66006/2360/2023»: {s!r}")
+    return "υ.α.", "/".join(parts[:-1]), int(parts[-1])
+
+
+def decision_core(number: str) -> str:
+    """Numeric part of a protocol: 'ΥΠΕΝ/ΔΑΟΚΑ/66006/2360' -> '66006/2360'."""
+    nums = re.findall(r"\d+", number)
+    return "/".join(nums) if nums else number
 
 
 def parse_act_key(s: str) -> tuple[str, str, int]:
     """'ν. 4495/2017' / 'ν.4495/2017' / '4495/2017' / 'π.δ. 18/2018' -> (kind, number, year)."""
+    dec = parse_decision(s)
+    if dec:
+        return dec
     f = fold(s.strip())
     m = re.match(r"^\s*(?:" + _PREFIX + r")?\s?" + _NUMYEAR, f)
     if not m:
@@ -139,6 +167,17 @@ def find_mentions(text: str, kind: str, number: str, year: int, aliases: list[st
     """
     f = folded if folded is not None else fold(text)
     out: dict[int, tuple[int, int, float]] = {}
+    if kind == "υ.α.":
+        core = decision_core(number)
+        groups = core.split("/")
+        pat = re.compile(r"(?<![\d])" + r"\s?/\s?".join(map(re.escape, groups)) + r"(?![\d])")
+        for m in pat.finditer(f):
+            out[m.start()] = (m.start(), m.end(), 1.0 if len(groups) >= 2 else 0.8)
+        for alias in aliases or []:
+            for m in re.finditer(re.escape(fold(alias)), f):
+                if not any(s <= m.start() < e for s, e, _ in out.values()):
+                    out[m.start()] = (m.start(), m.end(), 0.9)
+        return sorted(out.values())
     for r in find_act_refs(text, f):
         if r.kind == kind and r.number == str(int(number)) and r.year == int(year):
             out[r.start] = (r.start, r.end, 1.0)
@@ -208,6 +247,8 @@ def greek_letter_value(label: str) -> int | None:
         return None
     if len(s) >= 2 and len(set(s)) == 1 and s[0] in _GREEK_NUM:  # αα, ββ, ...
         return _GREEK_NUM[s[0]]
+    if len(s) >= 4 and len(s) % 2 == 0 and s[: len(s) // 2] == s[len(s) // 2:]:  # ιβιβ, στστ: doubled sub-case
+        return greek_letter_value(s[: len(s) // 2])
     tens = {"ι": 10, "κ": 20, "λ": 30, "μ": 40, "ν": 50}
     if s in _GREEK_NUM:
         return _GREEK_NUM[s]

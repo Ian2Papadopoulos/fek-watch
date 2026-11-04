@@ -188,3 +188,55 @@ def test_payload_paragraph_retargets_from_case():
     assert not res.failed
     p1 = law.article("39").children[0]
     assert [c.label for c in p1.children] == ["α", "ε"] and p1.children[1].text == "πέντε νέο."
+
+
+# ---------------------------------------------------------------- restatement-first (ν. 5306/2026 cases)
+
+def test_restated_article_wins_over_listed_changes():
+    """'… α) … β) στο τέλος της παρ. 3 προστίθενται δύο νέα εδάφια, γ) προστίθεται παρ. 3Α και το άρθρο 199
+    διαμορφώνεται ως εξής: «Άρθρο 199 …»' -> the FEK's own new wording is applied as a whole."""
+    law = _law({"199": ("Χρήση κτιρίων", ["1. Πρώτη.", "2. Δεύτερη. Τρίτη.", "3. Τέταρτη."])})
+    r = _rec("1. Στο άρθρο 199 επέρχονται οι ακόλουθες τροποποιήσεις: α) στο δεύτερο εδάφιο της παρ. 2 προστίθενται "
+             "οι λέξεις ⟦1⟧, β) στο τέλος της παρ. 3 προστίθενται δύο νέα εδάφια, γ) προστίθεται παρ. 3Α και το "
+             "άρθρο 199 διαμορφώνεται ως εξής: ⟦2⟧",
+             {1: "εξαιρουμένων", 2: "Άρθρο 199\nΧρήση κτιρίων\n1. Πρώτη.\n2. Δεύτερη. Τρίτη εξαιρουμένων.\n"
+                                    "3. Τέταρτη. Νέο ένα. Νέο δύο.\n3Α. Νέα παράγραφος."},
+             {"article": "199"})
+    res = consolidate_records(law, [r])
+    assert not res.failed
+    a = law.article("199")
+    assert [c.label for c in a.children] == ["1", "2", "3", "3Α"]
+    assert a.children[2].text == "Τέταρτη. Νέο ένα. Νέο δύο."
+
+
+def test_partial_parse_is_not_applied_partially():
+    """A listed step without quoted text must not be dropped silently: nothing is applied, it goes to review."""
+    law = _law({"83": ("Τίτλος", ["1. Ένα.", "2. Δύο:", "α) πρώτη και 290,", "3. Τρία."])})
+    r = _rec("1. Στο άρθρο 83 επέρχονται οι ακόλουθες τροποποιήσεις: α) στην περ. α) της παρ. 2, οι λέξεις ⟦1⟧ "
+             "αντικαθίστανται από τις λέξεις ⟦2⟧, β) στην παρ. 3, προστίθεται νέο δεύτερο εδάφιο.",
+             {1: "και 290", 2: ", 290 και 303"}, {"article": "83"})
+    res = consolidate_records(law, [r])
+    assert res.failed and law.article("83").children[1].children[0].text == "πρώτη και 290,"
+
+
+def test_new_article_goes_after_its_base_number():
+    law = Law("ν. 9999/2020", "x", [Unit("article", "πρώτο", "Κύρωση"), Unit("article", "198"),
+                                    Unit("article", "199"), Unit("article", "200")])
+    r = _rec("Στον Κώδικα προστίθεται άρθρο 199Α ως εξής: ⟦1⟧", {1: "Άρθρο 199Α\nΝέο\n1. Κείμενο."}, {})
+    res = consolidate_records(law, [r])
+    assert not res.failed
+    assert [a.label for a in law.articles] == ["πρώτο", "198", "199", "199Α", "200"]
+
+
+def test_headings_and_annex():
+    from fekwatch.pdftext import Paragraph
+    from fekwatch.amendments import segment
+    P = lambda t, b=False: Paragraph(1, t, bold=b, kind="heading" if b else "body")  # noqa: E731
+    doc = ExtractedDoc([P("ΝΟΜΟΣ ΥΠ’ ΑΡΙΘΜ. 9999 Δοκιμή", True), P("ΜΕΡΟΣ Α’ ΓΕΝΙΚΑ", True),
+                        P("ΚΕΦΑΛΑΙΟ Α’ ΟΡΙΣΜΟΙ", True), P("Άρθρο 1 Ορισμοί", True), P("1. Κείμενο."),
+                        P("ΚΕΦΑΛΑΙΟ Β’ ΛΟΙΠΑ", True), P("Άρθρο 2 Λοιπά", True), P("Κείμενο."),
+                        P("ΠΑΡΑΡΤΗΜΑ Α’", True), P("Άρθρο 7", True), P("πίνακας"),
+                        P("Άρθρο 3 Τελικό", True), P("Τέλος.")], 1)
+    arts = [a for a in segment(doc, 2020)[0]["articles"] if a.label]
+    assert [a.label for a in arts] == ["1", "2", "3"]          # "Άρθρο 7" is a table cell in the annex
+    assert arts[0].headings == ["ΜΕΡΟΣ Α’ ΓΕΝΙΚΑ", "ΚΕΦΑΛΑΙΟ Α’ ΟΡΙΣΜΟΙ"] and arts[1].headings == ["ΚΕΦΑΛΑΙΟ Β’ ΛΟΙΠΑ"]

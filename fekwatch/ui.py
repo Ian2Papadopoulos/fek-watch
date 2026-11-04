@@ -159,7 +159,12 @@ def lookup_act(root: Path, q: str) -> dict:
     cfg = cfgmod.load(root)
     out = {"is_act": True, "key": key, "watched": cfg.get(key) is not None}
     try:
-        found = EtClient().find_act(kind, num, year)
+        if kind == "υ.α.":
+            from .pipeline import resolve_act_fek
+            f = resolve_act_fek(cfgmod.watched_from(q), EtClient())
+            found = [f] if f else []
+        else:
+            found = EtClient().find_act(kind, num, year)
     except Exception as exc:  # noqa: BLE001
         out["error"] = str(exc)
         return out
@@ -343,7 +348,7 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
 </style></head><body>
 <header><div class="wrap">
  <div class="top"><div class="brand">FEK Watch</div>
-  <form class="search" id="sf"><input type="search" id="q" placeholder="Αναζήτηση: π.χ. «ν. 4759/2020», «αυθαίρετα», «Α 101/2018», «πέργκολα»…" autocomplete="off">
+  <form class="search" id="sf"><input type="search" id="q" placeholder="Αναζήτηση: π.χ. «ν. 4759/2020», «ΥΑ ΥΠΕΝ/ΔΑΟΚΑ/66006/2360/2023», «Α 101/2018», «πέργκολα»…" autocomplete="off">
   <button>Αναζήτηση</button></form></div>
  <nav><a data-tab="laws" class="on">Νόμοι</a><a data-tab="search">Αναζήτηση</a><a data-tab="tools">Εργαλεία</a><a data-tab="help">Βοήθεια</a></nav>
 </div></header>
@@ -355,7 +360,7 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
  <div class="grid" id="laws"></div>
  <div class="card"><h3>Προσθήκη νόμου</h3>
   <form id="addf" class="row" style="margin-top:8px">
-   <input type="text" id="a-act" placeholder="π.χ. ν. 4759/2020" required style="width:170px">
+   <input type="text" id="a-act" placeholder="π.χ. ν. 4759/2020 ή ΥΑ ΥΠΕΝ/…/2023" required style="width:230px">
    <input type="text" id="a-name" placeholder="Τίτλος (προαιρετικά)" style="flex:1;min-width:200px">
    <input type="text" id="a-alias" placeholder="Ονομασίες χωρίς αριθμό, χωρισμένες με ;" style="flex:1;min-width:200px">
    <button>Προσθήκη και φόρτωση ιστορικού</button></form>
@@ -462,7 +467,7 @@ async function search(){const q=$("#q").value.trim(); tab("search");
   <div class="small muted">${esc(r.title)}</div></div><div class="text">${hl(r.text,q)}</div></div>`).join("");
  $$(".res .head").forEach(h=>h.onclick=()=>h.parentElement.classList.toggle("open"));
  lookup(q);}
-async function lookup(q){const box=$("#lookup"); box.innerHTML=""; if(!/\d+\s*\/\s*\d{2,4}/.test(q)) return;
+async function lookup(q){const box=$("#lookup"); box.innerHTML=""; if(!/\d+\s*\/\s*\d{2,4}/.test(q) && !/^\s*(κ\.?υ\.?α|υ\.?α|ΚΥΑ|ΥΑ)/i.test(q)) return;
  if(/^\s*[ΑΒΓΔA-D]\S*\s+\d+\s*\/\s*\d{4}\s*$/i.test(q) && !/^\s*(ν|π|Ν|Π)/.test(q)){
   box.innerHTML=`<div class="card lookup row">Ψάχνετε το ΦΕΚ <b>${esc(q)}</b>; <button class="sec" id="lk-fek">Ανάλυση του ΦΕΚ</button></div>`;
   $("#lk-fek").onclick=()=>run({cmd:"fek",label:q}); return;}
@@ -486,7 +491,8 @@ $$("label.chk .tip").forEach(t=>t.onclick=e=>e.preventDefault());
 const groups=[["Τι βρέθηκε",["amendment","derogation","reference","quoted","mention"]],
  ["Τι κάνει η τροποποίηση",["replace","add","repeal","delete","modify","renumber","extend","suspend","interpret","correct"]],
  ["Βεβαιότητα",["inferred"]],
- ["Ενοποιημένο κείμενο",["applied","review","nontextual","changed","note","previous","experimental"]],
+ ["Ενοποιημένο κείμενο",["applied","restated","review","whole_act","nontextual","changed","note","previous","experimental"]],
+ ["Είδη πράξεων",["decision"]],
  ["Στήλες και κάρτες",["n_feks","n_amend","last","n_other","history","crosscheck"]]];
 $("#glossary").innerHTML="<h2>Τι σημαίνουν οι ετικέτες</h2>"+groups.map(([t,ks])=>`<h3 style="margin-top:14px">${t}</h3><dl>`+
  ks.map(k=>`<dt>${esc(G[k].label)}</dt><dd>${esc(G[k].text)}</dd>`).join("")+"</dl>").join("");

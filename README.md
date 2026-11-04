@@ -73,7 +73,24 @@ aliases = []          # names used instead of the number, e.g. for codes
 ```
 
 Or use the command line: `python -m fekwatch watch add "ν. 4759/2020" --name "..."`. Then run `history` for
-the new law. Supported acts: laws (ν.), presidential decrees (π.δ.), ν.δ., α.ν., β.δ. and ΠΝΠ.
+the new law. Supported acts: laws (ν.), presidential decrees (π.δ.), ν.δ., α.ν., β.δ., ΠΝΠ and **ministerial
+decisions**, written with their protocol number and year:
+
+```toml
+[[law]]
+act = "ΥΑ ΥΠΕΝ/ΔΑΟΚΑ/66006/2360/2023"
+name = "Κτιριοδομικός Κανονισμός"
+fek = "Β 3985/2023"        # optional: found automatically otherwise
+```
+
+For a decision, Τεύχος Β’ is searched too (decisions are mostly amended by other decisions), and only the
+issues that mention its protocol number are downloaded.
+
+**How amendments are applied.** When an amending FEK gives the full new wording of a provision ("… και το
+άρθρο 199 διαμορφώνεται ως εξής: «…»"), that wording is applied as a whole and the listed changes are treated as
+a summary. A provision is never applied in part: if any listed step cannot be understood, nothing is applied
+and it is listed under "needs manual review". An act amended as a whole by a decision that republishes it is
+listed with a link to read the new text.
 
 ## Local interface (search bar, watchlist, buttons)
 

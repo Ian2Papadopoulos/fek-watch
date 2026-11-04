@@ -35,9 +35,31 @@ _ACT_HEADER_RE = re.compile(
 _CORRECTION_HEADER_RE = re.compile(r"^ΔΙΟΡΘΩΣΕΙΣ ΣΦΑΛΜΑΤΩΝ|^Διόρθωση σφάλματος|^Διόρθωση σφαλμάτων", re.I)
 _ARTICLE_RE = re.compile(r"^(?:Άρθρο|ΑΡΘΡΟ|ΆΡΘΡΟ)\s+(?P<label>\d+[Α-Ω]{0,3}(?![α-ωά-ώ])|[Α-Ωα-ωάέήίόύώ]+(?:\s[α-ωάέήίόύώ]+)?)\s*(?P<title>.*)$")
 _SECTION_RE = re.compile(r"^(ΜΕΡΟΣ|ΤΜΗΜΑ|ΚΕΦΑΛΑΙΟ|ΥΠΟΚΕΦΑΛΑΙΟ|ΕΝΟΤΗΤΑ)\b")
+_ANNEX_RE = re.compile(r"^ΠΑΡΑΡΤΗΜΑ(?:ΤΑ)?\b")
+_TITLE_AMEND_RE = re.compile(r"^(τροποποιησ\w*|συμπληρωσ\w*|αντικαταστασ\w*|καταργησ\w*)\b")
+_TITLE_ACTIONS = {"τροποπ": "modify", "συμπλη": "add", "αντικα": "replace", "καταργ": "repeal"}
+_TITLE_TAIL_RE = re.compile(r"\s*(?:Ο|Η|ΟΙ)\s+(?:ΑΝΑΠΛΗΡΩΤ\w+\s+)?(?:ΥΦΥΠΟΥΡΓΟΣ|ΥΠΟΥΡΓΟΣ|ΥΠΟΥΡΓΟΙ|ΠΡΟΕΔΡΟΣ|ΓΕΝΙΚΟΣ)\b.*$")
+# Each decision in a Β' issue starts with its number: "Αριθμ. ΥΠΕΝ/ΔΑΟΚΑ/66006/2360"
+_DECISION_HEADER_RE = re.compile(r"^(?:Αριθμ|Αριθ|ΑΡΙΘΜ)\.?\s*(?:οικ\.?\s*)?(?P<proto>[^\s]*\d[^\s]*)\s*$")
 # An article heading on a line of its own, used when headings are not set in bold.
 _STANDALONE_ARTICLE_RE = re.compile(
-    r"^(?:Άρθρο|ΑΡΘΡΟ|ΆΡΘΡΟ)\s+(?P<label>\d{1,4}[Α-Ω]{0,3}|[α-ωάέήίόύώ]+(?:\s[α-ωάέήίόύώ]+)?)\s*$")
+    r"^(?:Άρθρο|ΑΡΘΡΟ|ΆΡΘΡΟ)\s+(?P<label>\d{1,4}[Α-Ω]{0,3}|[Α-Ωα-ωάέήίόύώΆΈΉΊΌΎΏ][α-ωάέήίόύώ]+(?:\s[α-ωάέήίόύώ]+)?)\s*[:.]?\s*$")
+
+
+_LEVEL = {"ΜΕΡΟΣ": 0, "ΤΜΗΜΑ": 1, "ΚΕΦΑΛΑΙΟ": 2, "ΥΠΟΚΕΦΑΛΑΙΟ": 3, "ΕΝΟΤΗΤΑ": 4}
+
+
+def heading_level(text: str) -> int:
+    return _LEVEL.get(text.split()[0] if text else "", 4)
+
+
+def _heading_path(heads: list[str]) -> list[str]:
+    """Keep only the headings in effect at the article (a later ΚΕΦΑΛΑΙΟ replaces an earlier one)."""
+    path: list[str] = []
+    for h in heads:
+        lv = heading_level(h)
+        path = [x for x in path if heading_level(x) < lv] + [h]
+    return path
 
 
 def _article_num(label: str) -> int | None:
@@ -50,6 +72,7 @@ def _article_num(label: str) -> int | None:
 
 def _looks_like_title(text: str) -> bool:
     return (len(text) < 220 and not text.rstrip().endswith((".", ":", ";", "»."))
+            and not re.match(r"^\d+\.\d+", text)  # "5.1. Στόχος" is a sub-heading of the body
             and not re.match(r"^(\d{1,3}[α-ω]?[.)]|[α-ω]{1,3}\))\s", text) and OPEN_Q not in text[:1])
 _NUM_PAR_RE = re.compile(r"(?m)^(?P<n>\d{1,3}[α-ω]?)(?:\.|\))\s?(?=\S)")
 _SELF_REF_RE = re.compile(r"του παροντοσ|τησ παρουσασ|του ιδιου του παροντοσ")
@@ -83,6 +106,7 @@ class Provision:
     cited: list[str]         # acts cited outside quotes
     quoted_cited: list[str]  # acts cited only inside quoted text
     articles: list[str] = field(default_factory=list)  # articles of the target affected (incl. new ones)
+    whole_act: bool = False  # the act as a whole amends the target (e.g. "Τροποποίηση της … απόφασης")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -95,6 +119,8 @@ class ActArticle:
     page: int
     section: str
     paras: list[Paragraph] = field(default_factory=list)
+    headings: list[str] = field(default_factory=list)  # ΜΕΡΟΣ/ΤΜΗΜΑ/ΚΕΦΑΛΑΙΟ… since the previous article
+    annex: bool = False
 
 
 @dataclass
@@ -133,18 +159,34 @@ def segment(doc: ExtractedDoc, year: int | None = None, issue_date: str | None =
     """Yield (act_key, act_title, articles) for each act in the issue."""
     paras = [p for p in doc.paragraphs if p.kind != "toc"]
     acts = []
-    cur_act = {"key": None, "title": "", "articles": [], "section": ""}
+    cur_act = {"key": None, "title": "", "articles": [], "section": "", "heads": [], "annex": False}
     cur_art: ActArticle | None = None
 
     def start_act(key, title):
         nonlocal cur_act, cur_art
         if cur_act["articles"] or cur_act["key"]:
             acts.append(cur_act)
-        cur_act = {"key": key, "title": title, "articles": [], "section": ""}
+        cur_act = {"key": key, "title": title, "articles": [], "section": "", "heads": [], "annex": False}
         cur_art = None
+
+    def new_article(label, title, page):
+        nonlocal cur_art
+        heads = cur_act["heads"]
+        if len(heads) > 12:
+            heads = []  # a run of bare headings with no articles in between is a table of contents
+        cur_art = ActArticle(label, title, page, cur_act["section"], headings=_heading_path(heads))
+        cur_act["heads"] = []
+        cur_act["articles"].append(cur_art)
+
+    def start_annex(text, page):
+        nonlocal cur_art
+        cur_act["annex"] = True
+        cur_art = ActArticle("", text, page, cur_act["section"], annex=True)
+        cur_act["articles"].append(cur_art)
 
     depth = 0              # «» depth, so headings inside quoted text are ignored
     last_num: int | None = None
+    ord_last = 0           # last outer article written as a word (πρώτο, δεύτερο, ...)
     pending_title = False  # collecting title lines after a regular-weight heading
     for p in paras:
         text = p.text
@@ -160,40 +202,81 @@ def segment(doc: ExtractedDoc, year: int | None = None, issue_date: str | None =
                 start_act(key, title)
                 depth, last_num, pending_title = 0, None, False
                 continue
+            dm = _DECISION_HEADER_RE.match(text)
+            if dm and depth == 0 and (cur_act["key"] is None or cur_act["key"].startswith("απόφ.")):
+                start_act(f"απόφ. {dm.group('proto').rstrip('.,')}", "")
+                depth, last_num, pending_title = 0, None, False
+                continue
+            if cur_act["key"] and cur_act["key"].startswith("απόφ.") and not cur_act["title"] \
+                    and not cur_act["articles"] and not _ARTICLE_RE.match(text):
+                cur_act["title"] = text  # the decision's subject line follows its number
+                continue
             if _CORRECTION_HEADER_RE.match(text):
                 start_act(None, text)
                 cur_act["title"] = text
                 depth, last_num, pending_title = 0, None, False
                 continue
+            if _ANNEX_RE.match(text) and depth == 0 and cur_act["articles"]:
+                start_annex(text, p.page)
+                pending_title = False
+                continue
             am = _ARTICLE_RE.match(text)
-            if am and not text.startswith(OPEN_Q):
-                cur_art = ActArticle(am.group("label").strip(), am.group("title").strip(), p.page, cur_act["section"])
-                cur_act["articles"].append(cur_art)
+            if am and cur_act["annex"]:
+                # an annex ends where the act's own numbering continues ("Άρθρο 429 <title>" after 428);
+                # bare "Άρθρο 27" cells of correspondence tables stay inside the annex
+                n = _article_num(am.group("label").strip())
+                seen = {a.label for a in cur_act["articles"] if a.label}
+                if n is not None and last_num is not None and n == last_num + 1 and am.group("label").strip() not in seen:
+                    cur_act["annex"] = False
+            if am and not text.startswith(OPEN_Q) and not cur_act["annex"]:
+                new_article(am.group("label").strip(), am.group("title").strip(), p.page)
                 depth, pending_title = 0, False  # a real heading: any open quote was unbalanced
                 last_num = _article_num(cur_art.label) or last_num
                 continue
-            if _SECTION_RE.match(text):
+            if _SECTION_RE.match(text) and not cur_act["annex"]:
                 cur_act["section"] = text
+                cur_act["heads"].append(text)
                 pending_title = False
                 continue
-            if cur_art is not None and not cur_art.paras:
+            if cur_art is not None and not cur_art.paras and not cur_art.annex:
                 # continuation of a multi-paragraph article title
                 cur_art.title = (cur_art.title + " " + text).strip()
                 continue
         elif depth == 0:
+            dm = _DECISION_HEADER_RE.match(text)
+            if dm and (cur_act["key"] is None or cur_act["key"].startswith("απόφ.")):
+                start_act(f"απόφ. {dm.group('proto').rstrip('.,')}", "")
+                depth, last_num, pending_title = 0, None, False
+                continue
             sm = _STANDALONE_ARTICLE_RE.match(text)
             n = _article_num(sm.group("label")) if sm else None
-            if sm and (last_num is None or n in (last_num + 1, last_num)):
-                cur_art = ActArticle(sm.group("label").strip(), "", p.page, cur_act["section"])
-                cur_act["articles"].append(cur_art)
-                last_num = n if n is not None else last_num
-                pending_title = True
+            if _ANNEX_RE.match(text) and text.upper() == text and len(text) < 300 and cur_act["articles"] \
+                    and any(a.label for a in cur_act["articles"]):
+                start_annex(text, p.page)
+                pending_title = False
                 continue
+            if sm:
+                lab = sm.group("label").strip()
+                is_word = not lab[0].isdigit()
+                in_seq = last_num is None or n in (last_num + 1, last_num)
+                restart = n == 1 and bool(cur_act["heads"])       # numbering restarts in a new chapter
+                outer = is_word and n is not None and n == ord_last + 1  # "Άρθρο Πρώτο" -> "Άρθρο Δεύτερο"
+                if cur_act["annex"] and outer:
+                    cur_act["annex"] = False
+                if not cur_act["annex"] and (in_seq or restart or outer):
+                    new_article(lab, "", p.page)
+                    if is_word:
+                        ord_last, last_num = n or ord_last, None
+                    else:
+                        last_num = n if n is not None else last_num
+                    pending_title = True
+                    continue
             if pending_title and cur_art is not None and not cur_art.paras and _looks_like_title(text):
                 cur_art.title = (cur_art.title + " " + text).strip()
                 continue
-            if _SECTION_RE.match(text) and text.upper() == text and len(text) < 300:
+            if _SECTION_RE.match(text) and text.upper() == text and len(text) < 300 and not cur_act["annex"]:
                 cur_act["section"] = text
+                cur_act["heads"].append(text)
                 pending_title = False
                 continue
         pending_title = False
@@ -320,7 +403,10 @@ def _first_verb_pos(f: str) -> int:
 
 _LOC_BEFORE_RE = re.compile(
     r"(?:αρθρ\w*|παρ\.|παραγραφ\w*|περ\.|περιπτωσ\w*|εδαφι\w*|τιτλ\w*|παραρτημ\w*|στοιχει\w*)"
-    r"\s?[\w’).]*\s+(?:του|τησ|των)\s*$"
+    r"\s?[\w’).]*\s+(?:του|τησ|των)"
+    # decisions: "της υπό στοιχεία ΥΠΕΝ/ΔΑΟΚΑ/…", "της υπ’ αριθμ. …", "της … κοινής υπουργικής απόφασης"
+    r"(?:\s+(?:υπ’?\s?αριθμ\.?|υπο\s+στοιχεια|αριθμ\.?|(?:κοινησ\s+)?υπουργικησ\s+αποφασησ|αποφασησ))*"
+    r"\s*[\w.]*/?[\w/.]*?\s*$"
 )
 _SUBJECT_BEFORE_RE = re.compile(r"(?:^|[\s,.:])(?:ο|στον|στο|τον)\s*$")
 # "από τις 3.11.2017, ημερομηνία δημοσίευσης του ν. 4495/2017": a date, never the target
@@ -501,6 +587,28 @@ def analyze(doc: ExtractedDoc, year: int | None = None, aliases: dict[str, list[
                     # a lead-in: names the act, has no new text of its own, introduces a list
                     if not pids and loc.is_empty() and (label == "" or re.search(r"εξησ\s*:?\s*$|ακολουθ\w*\s*:?\s*$", f.strip())):
                         lead_target = tkey
+    # A decision/decree titled "Τροποποίηση της … απόφασης «…»" amends that act as a whole, even when its body
+    # republishes the text instead of listing "η παρ. Χ αντικαθίσταται" instructions.
+    for act in acts:
+        title = _TITLE_TAIL_RE.sub("", act["title"] or "").strip()
+        tm = _TITLE_AMEND_RE.match(fold(title))
+        if not tm:
+            continue
+        f = fold(title)
+        targets = [r.key for r in find_act_refs(title, f)]
+        for key, names in aliases.items():
+            if any(fold(n) in f for n in names):
+                targets.append(key)
+        specific = {p.target for p in provisions if p.kind == "amendment" and p.act == (act["key"] or main_act or "?")}
+        targets = [t for t in targets if t not in specific]  # already covered by specific provisions
+        if not targets:
+            continue
+        page = act["articles"][0].page if act["articles"] else 1
+        provisions.append(Provision(
+            act=act["key"] or main_act or "?", article="", article_title=title, label="", page=page,
+            instruction=title, payload_ids=[], target=targets[0], target_how="explicit", locator={},
+            actions=[_TITLE_ACTIONS[tm.group(1)[:6]]], kind="amendment", cited=sorted(set(targets)),
+            quoted_cited=[], whole_act=True))
     return ActAnalysis(main_act, main_title, [a["key"] for a in acts if a["key"]], all_articles, provisions, payloads)
 
 

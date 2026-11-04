@@ -102,6 +102,7 @@ def make_record(meta: FekMeta, an: ActAnalysis, hit: Hit, w: WatchedAct) -> dict
         "actions": p.actions,
         "summary": summarize(p.actions, p.locator) if hit.kind == "amendment" else "",
         "target_how": p.target_how,
+        "whole_act": p.whole_act,
         "detected_at": now_iso(),
         "parser_version": PARSER_VERSION,
     }
@@ -217,7 +218,8 @@ def run_daily(cfg: Config, store: Store, client: EtClient, until: date | None = 
     if mention_groups:
         for w in cfg.laws:
             try:
-                res = client.search(groups=mention_groups, text=f"{w.number}/{w.year}",
+                groups_w = sorted(set(mention_groups) | ({2} if w.is_decision else set()))
+                res = client.search(groups=groups_w, text=w.search_text,
                                     released=(since.isoformat(), until.isoformat()))
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"mention search {w.key}: {exc}")
@@ -227,7 +229,13 @@ def run_daily(cfg: Config, store: Store, client: EtClient, until: date | None = 
                 if k in st["mentions_seen"]:
                     continue
                 try:
-                    recs = _mention_records(meta, w, client, store)
+                    if w.is_decision and meta.group == 2:
+                        # another decision may amend the watched decision: analyse it like a law
+                        an = analyze_meta(meta, client, store, cfg)
+                        recs = [make_record(meta, an, h, w) for h in hits_for(an, {w.key: w.as_match()})
+                                if h.kind in ("amendment", "derogation") or h.confidence >= cfg.settings.min_reference_confidence]
+                    else:
+                        recs = _mention_records(meta, w, client, store)
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"{meta.label}: {exc}")
                     continue
@@ -272,7 +280,29 @@ def _meta_from_label(et_id: int, label: str, client: EtClient) -> FekMeta | None
                    _parse_date(info.get("PublicationDate")), int(info.get("Pages") or 0))
 
 
+def _fek_dict(m: FekMeta, description: str = "") -> dict:
+    d = m.to_dict()
+    d["description"] = description
+    return {k: d.get(k) for k in ("et_id", "label", "issue_date", "release_date", "pages", "pdf", "et_page",
+                                  "description", "group", "number", "year")}
+
+
 def resolve_act_fek(w: WatchedAct, client: EtClient) -> dict | None:
+    if w.fek:  # given in watchlist.toml, e.g. "Β 3985/2023"
+        mm = re.match(r"^\s*(.+?)\s*(\d+)\s*/\s*(\d{4})\s*$", w.fek)
+        if mm:
+            g, num, yr = group_code(mm.group(1)), int(mm.group(2)), int(mm.group(3))
+            hit = [x for x in client.search(years=[yr], groups=[g], number=num) if x.number == num]
+            if hit:
+                return _fek_dict(hit[0], w.name)
+    if w.is_decision:
+        # the issue that publishes it: its snippet starts with "αποφασεισ αριθμ. <protocol>"
+        res = client.search(years=[w.year], groups=[2], text=w.search_text)
+        core = fold(w.search_text)
+        for m in sorted(res, key=lambda m: m.issue_date or ""):
+            if re.search(r"αριθμ\.?\s*\S*" + re.escape(core), fold(m.snippet or "")):
+                return _fek_dict(m, w.name)
+        return None
     found = client.find_act(w.kind, w.number, w.year)
     found = [f for f in found if f.get("group") == 1] or found
     if not found:
@@ -280,6 +310,30 @@ def resolve_act_fek(w: WatchedAct, client: EtClient) -> dict | None:
     f = found[0]
     return {k: f.get(k) for k in ("et_id", "label", "issue_date", "release_date", "pages", "pdf", "et_page",
                                   "description", "group", "number", "year")}
+
+
+_KIND_WORDS = {"ν.": r"ν\.?|νομ\w*", "π.δ.": r"π\.?\s?δ\.?|διαταγματ\w*", "ν.δ.": r"ν\.?\s?δ\.?|διαταγματ\w*",
+               "α.ν.": r"α\.?\s?ν\.?|νομ\w*", "β.δ.": r"β\.?\s?δ\.?|διαταγματ\w*", "π.ν.π.": r"π\.?\s?ν\.?\s?π\.?"}
+
+
+def _snippet_may_cite(m: FekMeta, w: WatchedAct) -> bool:
+    """Cheap pre-filter when a number is too common in ET's index (e.g. '41/2018' -> ~1,000 issues):
+    keep an issue if ET's snippet shows the number as this act ("π.δ. 41/2018"), or cannot tell
+    (no snippet, or the snippet starts at the number with no context)."""
+    f = fold(m.snippet or "")
+    if not f:
+        return True
+    num = r"(?<![\d/])" + re.escape(w.search_text).replace("/", r"\s?/\s?") + r"(?![\d])"
+    i = re.search(num, f)
+    if i is None:
+        return False  # ET matched the digits separately ("41 ... 2018"): not a citation of this act
+    if i.start() < 15:
+        return True
+    words = _KIND_WORDS.get(w.kind, "")
+    pat = r"(?:" + words + r")\s*\(?\s*" + num if words else num
+    if re.search(pat, f):
+        return True
+    return any(fold(a) in f for a in w.aliases)
 
 
 def run_history(cfg: Config, store: Store, client: EtClient, w: WatchedAct,
@@ -305,11 +359,17 @@ def run_history(cfg: Config, store: Store, client: EtClient, w: WatchedAct,
     law["et_timeline"] = tl
 
     cands: dict[int, FekMeta] = {}
+    groups = [1, 2] if w.is_decision else [1]  # decisions are amended mostly by other decisions (Β’)
+    found_all: list[FekMeta] = []
     for y in range(w.year, until.year + 1):
-        for m in client.search(years=[y], groups=[1], text=f"{w.number}/{w.year}"):
+        found_all += client.search(years=[y], groups=groups, text=w.search_text)
+    prefiltered = len(found_all) > 300
+    for m in found_all:
+        if not prefiltered or _snippet_may_cite(m, w):
             cands[m.et_id] = m
+    labels_ok = ("Α ", "Β ") if w.is_decision else ("Α ",)
     for e in tl:
-        if e["direction"] < 0 and e["other_label"].startswith("Α ") and e["other_id"] not in cands:
+        if e["direction"] < 0 and e["other_label"].startswith(labels_ok) and e["other_id"] not in cands:
             m = _meta_from_label(e["other_id"], e["other_label"], client)
             if m:
                 cands[m.et_id] = m
@@ -333,6 +393,7 @@ def run_history(cfg: Config, store: Store, client: EtClient, w: WatchedAct,
         if i % 10 == 0:
             store.save_law(w.slug, law)  # checkpoint: a crash mid-way keeps what was found
     law["history"] = {"scanned_at": now_iso(), "through": until.isoformat(), "candidates": len(ordered),
-                      "candidate_labels": [m.label for m in ordered]}
+                      "candidate_labels": [m.label for m in ordered],
+                      "search_hits": len(found_all), "prefiltered": prefiltered}
     store.save_law(w.slug, law)
     return {"candidates": len(ordered), "amendment_provisions": found, "et_timeline": len(tl)}

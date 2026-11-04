@@ -54,6 +54,7 @@ class Unit:
     notes: list[Note] = field(default_factory=list)
     history: list[tuple[str, Note]] = field(default_factory=list)  # (previous wording, note)
     added: bool = False
+    headings: list[str] = field(default_factory=list)  # ΜΕΡΟΣ/ΤΜΗΜΑ/ΚΕΦΑΛΑΙΟ printed before an article
 
     def full_text(self) -> str:
         parts = []
@@ -88,6 +89,7 @@ class Law:
     preamble: list[str] = field(default_factory=list)
     status: str = "active"
     notes: list[Note] = field(default_factory=list)
+    annexes: list[tuple[str, list[str]]] = field(default_factory=list)
 
     def article(self, label: str) -> Unit | None:
         lab = norm_art(label)
@@ -230,20 +232,31 @@ def parse_payload(text: str) -> tuple[str | None, str, list[Unit], str]:
 
 def build_law(key: str, doc, year: int) -> Law:
     acts = segment(doc, year)
-    act = next((a for a in acts if a["key"] == key), acts[0] if acts else None)
+    act = next((a for a in acts if a["key"] == key), None)
+    if act is None and key.startswith("υ.α."):
+        from .citations import decision_core, parse_act_key
+        core = decision_core(parse_act_key(key)[1])
+        act = next((a for a in acts if a["key"] and a["key"].startswith("απόφ.")
+                    and decision_core(a["key"]) .startswith(core)), None)
+    if act is None:
+        act = acts[0] if acts else None
     if act is None:
         return Law(key, "", [])
     arts = []
     preamble = []
+    annexes = []
     for a in act["articles"]:
         lines = [p.text for p in a.paras]
+        if a.annex:
+            annexes.append((a.title, lines))
+            continue
         if not a.label:
             preamble += lines
             continue
         kids, intro = parse_units(lines)
-        u = Unit("article", a.label, a.title, intro, kids)
+        u = Unit("article", a.label, a.title, intro, kids, headings=list(a.headings))
         arts.append(u)
-    return Law(key, act["title"], arts, preamble)
+    return Law(key, act["title"], arts, preamble, annexes=annexes)
 
 
 # --------------------------------------------------------------------------- sentences
@@ -410,9 +423,49 @@ def _merge(child: Locator, parent: Locator | None) -> Locator:
     return child.merged_into(parent) if parent else child
 
 
+_RESTATE_RE = re.compile(
+    r"(?:^|[\s,:;])(?:το|η|οι|ο|τα)\s+(?P<unit>[^⟦:;]{0,140}?)\s+"
+    r"(?P<verb>διαμορφων(?:εται|ονται)|αντικαθιστα(?:ται|νται)|τροποποι(?:ειται|ουνται))"
+    r"(?:\s+και\s+διαμορφων(?:εται|ονται))?\s+ωσ\s+(?:εξησ|ακολουθωσ)\s*:?\s*⟦(?P<pid>\d+)⟧\s*[.»”\s]*$")
+
+
+def _restatement(text: str, payloads: dict[int, str], base: Locator) -> Op | None:
+    """'... επέρχονται οι εξής τροποποιήσεις: α) ... β) ... και το άρθρο 199 διαμορφώνεται ως εξής: «...»'.
+
+    When a provision ends by giving the full new wording of a unit, that wording is authoritative:
+    apply it as one replacement and treat the listed changes as a summary."""
+    f = fold(text)
+    m = _RESTATE_RE.search(f)
+    if not m:
+        return None
+    payload = payloads.get(int(m.group("pid")), "")
+    restates_article = bool(re.match(r"^\s*(?:Άρθρο|ΑΡΘΡΟ|ΆΡΘΡΟ)\s+\S+", payload))
+    has_list = bool(_split_subitems(text[: m.start()])[1]) or "επερχ" in f[: m.start()]
+    if not (m.group("verb").startswith("διαμορφ") or (restates_article and has_list)):
+        return None
+    unit_text = text[m.start("unit"): m.end("unit")]
+    inner = parse_locator(_PH.sub(" ", unit_text))
+    if inner.is_empty():
+        if not (re.search(r"\bαρθρ", m.group("unit")) or restates_article):
+            return None
+        loc = Locator(article=base.article)
+    else:
+        loc = _merge(inner, base)
+    if not loc.article:
+        return None
+    if restates_article and (loc.paragraph or loc.case):
+        loc = Locator(article=loc.article)  # the payload is the whole article
+    summary = _short(_PH.sub("«…»", text[: m.start()]).strip(), 160)
+    return Op("replace_unit", loc, payload=payload, restates=True,
+              desc="Νέα διατύπωση (όπως την παραθέτει το ΦΕΚ)" + (f" — περιλαμβάνει: {summary}" if summary else ""))
+
+
 def parse_ops(instruction: str, payloads: dict[int, str], base: Locator) -> tuple[list[Op], list[str]]:
     """Parse one amending provision into operations. Returns (ops, problems)."""
     text = _strip_label(instruction).strip()
+    whole = _restatement(text, payloads, base)
+    if whole is not None:
+        return [whole], []
     lead, items = _split_subitems(text)
     ops: list[Op] = []
     problems: list[str] = []
@@ -729,7 +782,8 @@ def _insert_sorted(kids: list[Unit], new: Unit, position: str | None):
         return
     if new.label:
         key = _label_key(new.label)
-        same = [i for i, c in enumerate(kids) if c.kind == new.kind]
+        # only numbered siblings act as anchors (an "Άρθρο πρώτο" of a ratifying law must not)
+        same = [i for i, c in enumerate(kids) if c.kind == new.kind and _label_key(c.label)[0] != 999]
         for i in same:
             if _label_key(kids[i].label) > key:
                 kids.insert(i, new)
@@ -1137,6 +1191,11 @@ def consolidate_records(law: Law, records: list[dict], as_of: str | None = None)
         if not r.get("payloads") and not r.get("locator") and r.get("instruction", "").strip().endswith(":"):
             res.skipped.append((r, "εισαγωγική διάταξη (οι τροποποιήσεις ακολουθούν στις επόμενες παραγράφους)"))
             continue
+        if r.get("whole_act"):
+            res.failed.append(Failure(r, "Η πράξη τροποποιείται συνολικά (π.χ. αναδιάρθρωση ή νέο κείμενο) χωρίς "
+                                         "επιμέρους οδηγίες «η παρ. Χ αντικαθίσταται»· διαβάστε το νέο κείμενο στο ΦΕΚ.",
+                                      r.get("instruction", "")))
+            continue
         textual = {"replace", "add", "repeal", "delete", "modify", "renumber", "correct"}
         if r.get("actions") and not (set(r["actions"]) & textual):
             res.skipped.append((r, "μη κειμενική μεταβολή (" + ", ".join(ACTION_LABELS_EL.get(a, a) for a in r["actions"]) + ")"))
@@ -1147,9 +1206,13 @@ def consolidate_records(law: Law, records: list[dict], as_of: str | None = None)
             ops, problems = parse_ops(r.get("instruction", ""), payloads, base)
         except Exception as exc:  # noqa: BLE001
             ops, problems = [], [f"σφάλμα ανάλυσης: {exc}"]
-        if not ops:
-            res.failed.append(Failure(r, "; ".join(problems) or "η διάταξη δεν αναλύθηκε σε συγκεκριμένη ενέργεια",
-                                      r.get("instruction", "")))
+        if not ops or problems:
+            # never apply a provision only in part: if any listed step could not be parsed, nothing
+            # is applied and the whole provision goes to manual review
+            reason = "; ".join(problems) or "η διάταξη δεν αναλύθηκε σε συγκεκριμένη ενέργεια"
+            if ops and problems:
+                reason = "δεν εφαρμόστηκε κανένα από τα βήματα, γιατί δεν αναγνωρίστηκαν όλα: " + reason
+            res.failed.append(Failure(r, reason, r.get("instruction", "")))
             continue
         for op in ops:
             n += 1
@@ -1200,6 +1263,11 @@ def _e(s) -> str:
 
 
 CONS_CSS = """
+.sec{text-align:center;font-weight:700;margin:26px 0 6px;letter-spacing:.02em}.sec.l0{font-size:19px;margin-top:40px}
+.sec.l1{font-size:17px}.sec.l2{font-size:15px}.sec.l3,.sec.l4{font-size:14px;color:var(--muted)}
+.toc .toch{margin:6px 0 2px}.toc .toch.l0{font-weight:700;margin-top:12px}.toc .toch.l1{padding-left:12px;font-weight:600}
+.toc .toch.l2{padding-left:24px}.toc .toch.l3,.toc .toch.l4{padding-left:36px}
+.toc .toca{display:inline-block;min-width:34px;margin:2px 2px 0 0;font-size:13px}
 .art{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:14px 0}
 .art.changed{border-left:4px solid var(--amend)}.art.repealed{opacity:.6}
 .arth{font-weight:600;text-align:center}.artt{font-weight:600;text-align:center;margin-bottom:8px}
@@ -1275,14 +1343,28 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
                          f"<br><span class=\"small\">Λόγος: {_e(f.reason)}</span>"
                          f"<details><summary class=\"small\">κείμενο διάταξης</summary><div class=\"prev\">{_e(_render_instr(r))}</div></details></div>")
     parts.append("<h2>Κείμενο</h2>")
-    toc = " ".join(f"<a href=\"#a{_e(a.label)}\">{_e(a.label)}</a>" for a in law.articles)
-    parts.append(f"<p class=\"small\">Άρθρα: {toc}</p>")
-    for a in law.articles:
+    from .amendments import heading_level
+    toc_items, hn = [], 0
+    for ai, a in enumerate(law.articles):
+        for h in a.headings:
+            hn += 1
+            toc_items.append(f"<div class=\"toch l{heading_level(h)}\"><a href=\"#h{hn}\">{_e(h)}</a></div>")
+        toc_items.append(f"<a class=\"toca\" href=\"#art{ai}\">{_e(a.label)}</a>")
+    if law.annexes:
+        toc_items.append("<div class=\"toch l0\"><a href=\"#annexes\">Παραρτήματα</a></div>")
+    parts.append(f"<details class=\"card toc\"><summary><b>Περιεχόμενα</b> ({len(law.articles)} άρθρα)</summary>"
+                 f"{''.join(toc_items)}</details>")
+    hn = 0
+    for ai, a in enumerate(law.articles):
+        for h in a.headings:
+            hn += 1
+            lv = heading_level(h)
+            parts.append(f"<div class=\"sec l{lv}\" id=\"h{hn}\">{_e(h)}</div>")
         cls = "art" + (" changed" if a.notes or _any_notes(a) else "") + (" repealed" if a.status == "repealed" else "")
         notes: list[Note] = []
         _collect_notes(a, notes)
         notes = sorted({n.n: n for n in notes}.values(), key=lambda n: n.n)
-        head = (f"<div class=\"arth\" id=\"a{_e(a.label)}\">Άρθρο {_e(a.label)}{_note_refs(a)}</div>"
+        head = (f"<div class=\"arth\" id=\"art{ai}\">Άρθρο {_e(a.label)}{_note_refs(a)}</div>"
                 f"<div class=\"artt\">{_e(a.title)}</div>")
         if a.status == "repealed":
             body = "<div class=\"rep\">[Καταργήθηκε]</div>"
@@ -1300,6 +1382,12 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
                 f"(<a href=\"{_e(n.pdf)}\">ΦΕΚ {_e(n.fek)}, {_e(_fmt_date(n.date))}</a>)"
                 f"{(' <span class=warn>⚠ ' + _e(n.warning) + '</span>') if n.warning else ''}</li>" for n in notes) + "</ol>"
         parts.append(f"<div class=\"{cls}\">{head}{body}{prev}{nl}</div>")
+    if law.annexes:
+        parts.append("<h2 id=\"annexes\">Παραρτήματα</h2><p class=\"small muted\">Τα παραρτήματα εμφανίζονται όπως "
+                     "δημοσιεύθηκαν αρχικά· οι πίνακες μπορεί να μην αποδίδονται σωστά από το PDF.</p>")
+        for title, lines in law.annexes:
+            parts.append(f"<details class=\"card\"><summary><b>{_e(title)}</b></summary>"
+                         f"<div class=\"prev\">{_e(chr(10).join(lines))}</div></details>")
     return (f"<!doctype html><html lang=\"el\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{_e(w.key)} — ενοποιημένο κείμενο</title>"
             f"<style>{CSS}{CONS_CSS}{TIP_CSS}</style></head><body><main><p class=\"small\"><a href=\"../index.html\">← Αρχική</a> · "
