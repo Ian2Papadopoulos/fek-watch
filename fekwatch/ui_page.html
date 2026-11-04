@@ -1,0 +1,461 @@
+<!doctype html><html lang="el"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>FEK Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Style: framed sheet (tasteskill app sheet, seed 615037012).
+   Face: the Greek state blue as the one accent (links, FEK labels, the active tab); every other surface is grey.
+   Grid at 1440: sidebar 228 + sheet 1204 (inset 8 right) -> content 1204 - 2*32 = 1140.
+   Laws table 1140: identity 40% (456) + amendments 150 + last 170 + references 110 + actions (the rest).  Lower row: 2fr 1fr -> 744 + 24 + 372 = 1140. */
+:root{
+ --ground:#f6f7f9;--surface:#fff;--raised:#f4f6f8;--active:#e9ecef;--border:#e6e8eb;--rule:#eef0f2;--control:#cdced1;
+ --text:#131416;--muted:#5b5e61;--accent:#0d5eaf;--primary:#1d1f20;--on-primary:#fff;
+ --positive:#1e7b4f;--negative:#b42318;
+ --pill-neutral-bg:#ebedef;--pill-neutral-ink:#353736;--pill-warning-bg:#fff7e6;--pill-warning-ink:#8a3c0b;--mark:#fff1a8;
+ --radius-sheet:16px;--radius-card:10px;--radius-control:8px;--radius-chip:999px;
+ --sheet-inset:8px;--sidebar:228px;--topbar:56px;--pad:32px;--card-pad:24px;--gap:24px;--control-h:36px;
+ --fs-title:22px;--fs-section:16px;--fs-body:14px;--fs-small:13px;
+ --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+ --line:var(--border); /* used by the shared tooltip CSS */
+}
+@media (prefers-color-scheme:dark){:root{
+ --ground:#0b0b0c;--surface:#151516;--raised:#1d1d1f;--active:#262628;--border:#2a2a2d;--rule:#222224;--control:#454548;
+ --text:#f2f2f3;--muted:#b0b0b5;--accent:#78aef0;--primary:#f2f2f3;--on-primary:#111;
+ --positive:#3fc07a;--negative:#f0857a;
+ --pill-neutral-bg:#262628;--pill-neutral-ink:#d6d6da;--pill-warning-bg:#33270f;--pill-warning-ink:#f1c36b;--mark:#5a4d00}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ground);color:var(--text);font:400 var(--fs-body)/1.55 var(--font);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+input,select,button{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}.small{font-size:var(--fs-small)}
+.hide{display:none!important}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ---- shell: one tinted L (sidebar + top bar), the work on a white sheet */
+.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;margin-bottom:18px;font-weight:600;font-size:16px;color:var(--text)}
+.brand svg{flex:none}
+.brand small{display:block;font-weight:400;font-size:12px;color:var(--muted);line-height:1.2}
+.nav a{display:flex;align-items:center;gap:10px;height:38px;padding:0 10px;border-radius:var(--radius-control);color:var(--muted);font-weight:500;cursor:pointer}
+.nav a:hover{text-decoration:none;color:var(--text);background:var(--active)}
+.nav a.on{background:var(--active);color:var(--text)}
+.nav a.on svg{color:var(--accent)}
+.nav svg{width:18px;height:18px;flex:none}
+.side-foot{margin-top:auto;padding:12px 10px;color:var(--muted);font-size:var(--fs-small);line-height:1.5}
+.side-foot b{display:block;color:var(--text);font-weight:500}
+.topbar{position:fixed;z-index:10;background:var(--ground);top:0;left:var(--sidebar);right:var(--sheet-inset);height:var(--topbar);display:flex;align-items:center;justify-content:center}
+.search{position:relative;width:min(620px,100%)}
+.search svg{position:absolute;left:12px;top:50%;width:16px;height:16px;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.search input[type=search]{width:100%;height:38px;padding:0 12px 0 38px;border:1px solid var(--control);border-radius:var(--radius-control);background:var(--surface)}
+.sheet{margin:var(--topbar) var(--sheet-inset) var(--sheet-inset) var(--sidebar);min-height:calc(100vh - var(--topbar) - var(--sheet-inset));
+ background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sheet);padding:28px var(--pad) 48px}
+.mtop,.mnav,.msearch{display:none}
+
+/* ---- title row */
+.title{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
+h1{font-size:var(--fs-title);font-weight:600;line-height:1.3;margin:0;letter-spacing:-.01em}
+.title p{margin:6px 0 0;color:var(--muted);font-size:15px;max-width:760px}
+.title p b{color:var(--text);font-weight:500}
+h2{font-size:var(--fs-section);font-weight:600;margin:0}
+.actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+
+/* ---- buttons and fields */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--control-h);padding:0 16px;border-radius:var(--radius-control);
+ border:1px solid var(--control);background:var(--surface);color:var(--text);font-weight:500;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s,transform .06s}
+.btn:hover{background:var(--raised);text-decoration:none}.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.primary:hover{background:#000}
+.btn:disabled{opacity:.6;cursor:default}
+.link{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font-weight:500}
+.link:hover{text-decoration:underline}
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-weight:500}
+.field .hint{color:var(--muted);font-size:var(--fs-small)}
+input[type=text],input[type=search],select{height:40px;padding:0 12px;border:1px solid var(--control);border-radius:var(--radius-control);background:var(--surface);min-width:0}
+input::placeholder{color:#6b6e71}
+
+/* ---- panels */
+.panel{border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:20px var(--card-pad) 12px}
+.panel-body{padding:4px var(--card-pad) var(--card-pad)}
+.row2{display:grid;grid-template-columns:2fr 1fr;gap:var(--gap);margin-top:var(--gap);align-items:start}
+
+/* ---- laws table */
+.tablewrap{border:1px solid var(--border);border-radius:var(--radius-card)}
+table.laws{width:100%;border-collapse:collapse}
+.laws th{font-size:var(--fs-small);font-weight:400;color:var(--muted);text-align:left;padding:14px 16px 10px;white-space:nowrap;border-bottom:1px solid var(--border)}
+.laws th:first-child,.laws td:first-child{padding-left:var(--card-pad);width:40%}
+.laws th:last-child,.laws td:last-child{padding-right:var(--card-pad)}
+.laws td{padding:16px;border-top:1px solid var(--rule);vertical-align:top}
+.laws tr:first-child td{border-top:0}
+.laws th.num,.laws td.num{text-align:right}
+.laws td.num{font-size:15px}
+.laws td.num .sub{display:block;font-size:var(--fs-small);color:var(--muted);margin-top:2px}
+.law-key{font-weight:600;font-size:15px;color:var(--text)}
+.law-name{color:var(--muted);margin-top:2px;max-width:460px}
+.zero{color:var(--muted)}
+.rowact{display:flex;gap:14px;justify-content:flex-end;align-items:center;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;flex:none;white-space:nowrap;height:22px;padding:0 9px;border-radius:var(--radius-chip);font-size:12px;font-weight:500;
+ background:var(--pill-neutral-bg);color:var(--pill-neutral-ink)}
+.pill.warn{background:var(--pill-warning-bg);color:var(--pill-warning-ink)}
+.pill .tip{margin-left:4px}
+
+/* row menu */
+details.menu{position:relative}
+details.menu summary{list-style:none;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--radius-control);cursor:pointer;color:var(--muted)}
+details.menu summary::-webkit-details-marker{display:none}
+details.menu summary:hover,details.menu[open] summary{background:var(--active);color:var(--text)}
+details.menu .pop{position:absolute;right:0;top:36px;z-index:30;min-width:220px;padding:6px;background:var(--surface);border:1px solid var(--border);
+ border-radius:var(--radius-card);box-shadow:0 8px 24px rgba(0,0,0,.12)} /* taste-skill-ignore: a menu floats */
+.pop button{display:block;width:100%;text-align:left;background:none;border:0;padding:9px 12px;border-radius:6px;cursor:pointer}
+.pop button:hover{background:var(--raised)}
+.pop button.danger{color:var(--negative)}
+.pop hr{border:0;border-top:1px solid var(--rule);margin:6px 0}
+
+/* recent FEKs */
+.feed{list-style:none;margin:0;padding:0}
+.feed li{display:grid;grid-template-columns:92px 1fr auto;gap:16px;align-items:baseline;padding:13px 0;border-top:1px solid var(--rule)}
+.feed li:first-child{border-top:0}
+.feed .date{color:var(--muted)}
+.feed .fek{font-weight:600}
+.feed .what{color:var(--muted);font-size:var(--fs-small);margin-top:2px}
+.feed .n{text-align:right;white-space:nowrap}
+.addform{display:flex;flex-direction:column;gap:16px}
+
+/* job */
+.job{margin-bottom:28px}
+.job .panel-head{align-items:center}
+.log{margin:0;background:var(--raised);border-radius:8px;padding:14px 16px;max-height:300px;overflow:auto;white-space:pre-wrap;
+ font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text)} /* taste-skill-ignore: literal program output */
+.note{margin:0 0 20px;padding:12px 16px;border-radius:8px;background:var(--raised)}
+
+/* ---- search */
+.filters{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:24px}
+.kinds{display:flex;flex-wrap:wrap;gap:12px}
+.filters select{width:200px}.filters #f-art{width:130px}.filters #f-year{width:100px}
+.chip{position:relative;display:inline-flex;align-items:center;gap:6px;height:var(--control-h);padding:0 14px;border-radius:var(--radius-chip);border:1px solid var(--control);
+ cursor:pointer;user-select:none;color:var(--muted);font-weight:500}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip:has(input:checked){background:var(--active);border-color:var(--active);color:var(--text)}
+.chip:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.chip .tick{width:14px;height:14px;display:none}
+.chip:has(input:checked) .tick{display:block}
+.results{border-top:1px solid var(--border)}
+.res{border-bottom:1px solid var(--rule)}
+.res summary{list-style:none;display:grid;grid-template-columns:1fr auto;gap:8px 20px;padding:16px 4px;cursor:pointer}
+.res summary::-webkit-details-marker{display:none}
+.res summary:hover .r-title{color:var(--text)}
+.r-line{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.r-line .fek{font-weight:600}
+.r-title{grid-column:1/-1;color:var(--muted);margin-top:-4px}
+.r-tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+.r-text{white-space:pre-wrap;background:var(--raised);border-radius:8px;padding:16px 18px;margin:0 4px 18px;line-height:1.65;max-width:900px}
+mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
+.lookup{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:18px var(--card-pad);margin-bottom:24px;background:var(--raised);border-radius:var(--radius-card)}
+.empty{padding:28px 4px;color:var(--muted)}
+.examples{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+
+/* ---- tools and help: two-column rows */
+.srow{display:grid;grid-template-columns:minmax(240px,380px) 1fr;gap:40px;padding:32px 0;border-top:1px solid var(--rule)}
+.srow:first-of-type{border-top:0;padding-top:4px}
+.srow h2{margin-bottom:6px}
+.srow .desc{color:var(--muted);margin:0}
+.spanel{background:var(--raised);border-radius:var(--radius-sheet);padding:24px;max-width:760px}
+.spanel p{margin:0 0 16px}.spanel p:last-child{margin-bottom:0}
+.inline{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.inline .field{flex:0 1 260px}
+.help ul{margin:0;padding-left:20px}.help li{margin:0 0 10px}
+.help dl{margin:0}.help dt{font-weight:600;margin-top:16px}.help dt:first-child{margin-top:0}.help dd{margin:4px 0 0;color:var(--muted)}
+
+/*TIP_CSS*/
+.tip::after{display:none}.tip:hover::after,.tip:focus::after{display:block} /* a hidden bubble must not widen the page */
+
+/* ---- tablet: the sidebar folds into a top bar */
+@media (max-width:1000px){
+ .sidebar,.topbar{display:none}
+ .mtop{display:flex;position:sticky;top:0;z-index:20;align-items:center;gap:16px;height:56px;padding:0 20px;background:var(--ground)}
+ .mtop .brand{margin:0;padding:0}
+ .mtabs{display:flex;gap:4px;margin-left:auto;overflow-x:auto}
+ .mtabs a{padding:8px 12px;border-radius:var(--radius-control);color:var(--muted);font-weight:500;cursor:pointer;white-space:nowrap}
+ .mtabs a.on{background:var(--active);color:var(--text)}
+ .sheet{margin:0 8px 8px;padding:24px 24px 40px;min-height:calc(100vh - 64px)}
+ .msearch{display:block;margin-bottom:20px}
+ .row2{grid-template-columns:1fr}
+ .srow{grid-template-columns:1fr;gap:16px}
+}
+/* ---- phone: bottom bar, tables become two-line rows */
+@media (max-width:640px){
+ .mtabs{display:none}
+ .mnav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;height:60px;background:var(--ground);border-top:1px solid var(--border)}
+ .mnav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:12px;color:var(--muted);cursor:pointer}
+ .mnav a svg{width:20px;height:20px}
+ .mnav a.on{color:var(--text)}.mnav a.on svg{color:var(--accent)}
+ .mtop{padding:0 16px}
+ .sheet{margin:0;border-radius:0;border-left:0;border-right:0;padding:20px 16px 96px}
+ .title{flex-direction:column;gap:16px}
+ .title .actions{width:100%}.title .actions .btn{flex:1}
+ .panel-head,.panel-body{padding-left:16px;padding-right:16px}
+ .feed li{grid-template-columns:1fr auto;gap:2px 12px}
+ .feed .date{grid-column:1/-1;font-size:var(--fs-small)}
+ .filters select,.filters #f-art,.filters #f-year{width:auto;flex:1 1 28%}
+ .kinds{flex:1 1 100%;min-width:0;flex-wrap:nowrap;overflow-x:auto;margin:0 -16px;padding:2px 16px 6px;scrollbar-width:none}
+ .chip{flex:none}
+ .res summary{grid-template-columns:1fr}
+ .r-tags{justify-content:flex-start}
+ .lookup{flex-direction:column;align-items:flex-start}
+ .inline .field{flex:1 1 100%}
+}
+@media (max-width:900px){
+ .tablewrap{border:0}
+ .laws thead{display:none}
+ .laws,.laws tbody{display:block}
+ .laws tr{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:16px 0;border-top:1px solid var(--rule)}
+ .laws tr:first-child{border-top:0}
+ .laws td{display:block;padding:0!important;border:0}
+ .laws td.c-prov,.laws td.c-refs{display:none}
+ .laws td.c-last{text-align:right}
+ .laws td.c-stats{display:block;grid-column:1/-1;color:var(--muted);font-size:13px}
+ .laws td.c-act{grid-column:1/-1;margin-top:8px}
+ .rowact{justify-content:flex-start}
+}
+@media (min-width:901px){.laws td.c-stats{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <symbol id="i-laws" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h6M10 17h6"/></symbol>
+ <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+ <symbol id="i-tools" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+ <symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6"/><path d="M12 17h.01"/></symbol>
+ <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></symbol>
+ <symbol id="i-tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+ <symbol id="i-mark" viewBox="0 0 28 28" fill="none"><path d="M7 3.5h10l5.5 5.5v15.5H7z" stroke="#0d5eaf" stroke-width="1.8" stroke-linejoin="round"/><path d="M17 3.5V9h5.5" stroke="#0d5eaf" stroke-width="1.8" stroke-linejoin="round"/><circle cx="13.5" cy="16" r="3.6" stroke="#0d5eaf" stroke-width="1.8"/><path d="m16.2 18.7 2.6 2.6" stroke="#0d5eaf" stroke-width="1.8" stroke-linecap="round"/></symbol>
+</svg>
+
+<aside class="sidebar" aria-label="Πλοήγηση">
+ <div class="brand"><svg width="28" height="28"><use href="#i-mark"/></svg><div>FEK Watch<small>Τροποποιήσεις νόμων</small></div></div>
+ <nav class="nav">
+  <a data-tab="laws" class="on"><svg><use href="#i-laws"/></svg>Νόμοι</a>
+  <a data-tab="search"><svg><use href="#i-search"/></svg>Αναζήτηση</a>
+  <a data-tab="tools"><svg><use href="#i-tools"/></svg>Εργαλεία</a>
+  <a data-tab="help"><svg><use href="#i-help"/></svg>Βοήθεια</a>
+ </nav>
+ <div class="side-foot"><b>Τελευταίος έλεγχος</b><span id="lastrun">—</span><div id="syncmsg" style="margin-top:8px"></div></div>
+</aside>
+<div class="topbar"><form class="search" id="sf" role="search"><svg><use href="#i-search"/></svg>
+ <input type="search" id="q" aria-label="Αναζήτηση" placeholder="Αναζήτηση: πέργκολα, ν. 4759/2020, Α 101/2018, άρθρο 29…" autocomplete="off"></form></div>
+
+<header class="mtop"><div class="brand"><svg width="26" height="26"><use href="#i-mark"/></svg>FEK Watch</div>
+ <nav class="mtabs"><a data-tab="laws" class="on">Νόμοι</a><a data-tab="search">Αναζήτηση</a><a data-tab="tools">Εργαλεία</a><a data-tab="help">Βοήθεια</a></nav></header>
+
+<main class="sheet">
+ <section class="panel job hide" id="jobcard" aria-live="polite">
+  <div class="panel-head"><div class="actions"><h2 id="jobtitle"></h2><span id="jobstatus" class="pill"></span></div>
+   <button class="link" id="jobclose">Κλείσιμο</button></div>
+  <div class="panel-body"><pre class="log" id="joblog"></pre></div>
+ </section>
+
+ <section id="tab-laws">
+  <div class="title"><div><h1>Νόμοι που παρακολουθείτε</h1><p id="finding">Φόρτωση…</p></div>
+   <div class="actions"><a class="btn" href="/site/index.html" target="_blank">Πλήρης αναφορά</a><button class="btn primary" id="b-daily">Έλεγχος νέων ΦΕΚ</button></div></div>
+  <div class="tablewrap"><table class="laws">
+   <thead><tr><th>Πράξη</th><th class="num">Τροποποιήσεις<span data-tip-k="n_amend"></span></th>
+    <th class="num">Τελευταία τροποποίηση<span data-tip-k="last"></span></th><th class="num">Αναφορές<span data-tip-k="n_other"></span></th><th><span class="hide">Ενέργειες</span></th></tr></thead>
+   <tbody id="lawrows"></tbody></table></div>
+  <div class="row2">
+   <section class="panel"><div class="panel-head"><h2>Πρόσφατα τροποποιητικά ΦΕΚ</h2><a href="#" id="all-amend" class="small">Όλες οι τροποποιήσεις</a></div>
+    <div class="panel-body"><ul class="feed" id="recent"></ul></div></section>
+   <section class="panel"><div class="panel-head"><h2>Προσθήκη νόμου</h2></div>
+    <div class="panel-body"><form id="addf" class="addform">
+     <div class="field"><label for="a-act">Πράξη</label><input type="text" id="a-act" placeholder="ν. 4759/2020" required aria-describedby="a-act-h">
+      <span class="hint" id="a-act-h">Νόμος, π.δ. ή υπουργική απόφαση με αριθμό πρωτοκόλλου.</span></div>
+     <div class="field"><label for="a-name">Τίτλος <span class="muted">(προαιρετικά)</span></label><input type="text" id="a-name" placeholder="Εκσυγχρονισμός χωροταξικού σχεδιασμού"></div>
+     <div class="field"><label for="a-alias">Άλλες ονομασίες <span class="muted">(προαιρετικά)</span></label><input type="text" id="a-alias" placeholder="Κτιριοδομικός Κανονισμός; ΝΟΚ" aria-describedby="a-alias-h">
+      <span class="hint" id="a-alias-h">Χωρίστε τις με ερωτηματικό (;).</span></div>
+     <div><button class="btn">Προσθήκη και φόρτωση ιστορικού</button>
+      <p class="hint muted small" style="margin:10px 0 0">Η φόρτωση διαβάζει όλα τα ΦΕΚ Α’ που αναφέρουν τον νόμο: 15–40 λεπτά για νόμους με πολλές τροποποιήσεις.</p></div>
+    </form></div></section>
+  </div>
+ </section>
+
+ <section id="tab-search" class="hide">
+  <div class="title"><div><h1>Αναζήτηση</h1><p id="count">Όλες οι καταγεγραμμένες τροποποιήσεις, οι πιο πρόσφατες πρώτα.</p></div></div>
+  <form class="msearch search" id="sf2" role="search"><svg><use href="#i-search"/></svg>
+   <input type="search" id="q2" aria-label="Αναζήτηση" placeholder="πέργκολα, ν. 4759/2020, Α 101/2018…" autocomplete="off"></form>
+  <div id="lookup"></div>
+  <div class="filters">
+   <select id="f-law" aria-label="Νόμος"><option value="">Όλοι οι νόμοι</option></select>
+   <input type="text" id="f-art" placeholder="Άρθρο, π.χ. 29" aria-label="Άρθρο">
+   <input type="text" id="f-year" placeholder="Έτος" aria-label="Έτος" inputmode="numeric">
+   <div class="kinds"><label class="chip" data-k="amendment"><input type="checkbox" value="amendment" checked><svg class="tick"><use href="#i-tick"/></svg>Τροποποιήσεις</label>
+   <label class="chip" data-k="derogation"><input type="checkbox" value="derogation"><svg class="tick"><use href="#i-tick"/></svg>Παρεκκλίσεις</label>
+   <label class="chip" data-k="reference"><input type="checkbox" value="reference"><svg class="tick"><use href="#i-tick"/></svg>Αναφορές</label>
+   <label class="chip" data-k="mention"><input type="checkbox" value="mention"><svg class="tick"><use href="#i-tick"/></svg>Αποφάσεις</label>
+   <label class="chip" data-k="quoted"><input type="checkbox" value="quoted"><svg class="tick"><use href="#i-tick"/></svg>Μέσα σε νέο κείμενο</label></div>
+  </div>
+  <div class="results" id="results"></div>
+ </section>
+
+ <section id="tab-tools" class="hide">
+  <div class="title"><div><h1>Εργαλεία</h1><p>Ανάλυση ενός ΦΕΚ, συγχρονισμός και ανανέωση των αναφορών.</p></div></div>
+  <div class="srow"><div><h2>Τι αλλάζει ένα ΦΕΚ;</h2><p class="desc">Δείχνει τις διατάξεις του ΦΕΚ που αφορούν τους νόμους σας, πριν ακόμη μπουν στη λίστα.</p></div>
+   <div class="spanel"><form id="fekf" class="inline"><div class="field"><label for="fek">ΦΕΚ</label><input type="text" id="fek" placeholder="Α 101/2018" required></div>
+    <button class="btn">Ανάλυση</button></form></div></div>
+  <div class="srow"><div><h2>Συγχρονισμός με το GitHub</h2><p class="desc">Γίνεται αυτόματα κάθε φορά που ανοίγει η εφαρμογή.</p></div>
+   <div class="spanel"><p>Στέλνει τη λίστα νόμων σας στο GitHub, ώστε ο καθημερινός έλεγχος να τους παρακολουθεί, και φέρνει τα νέα ευρήματα.</p>
+    <button class="btn" data-run="sync">Συγχρονισμός τώρα</button></div></div>
+  <div class="srow"><div><h2>Ενοποιημένα κείμενα</h2><p class="desc">Εφαρμόζει ξανά όλες τις τροποποιήσεις σε κάθε νόμο.</p></div>
+   <div class="spanel"><p>Χρήσιμο αφού φορτώσετε το ιστορικό ενός νόμου. Διαρκεί μερικά λεπτά.</p><button class="btn" data-run="consolidate">Ανανέωση ενοποιημένων κειμένων</button></div></div>
+  <div class="srow"><div><h2>Αναφορές</h2><p class="desc">Οι σελίδες HTML με τη λίστα τροποποιήσεων κάθε νόμου.</p></div>
+   <div class="spanel"><button class="btn" data-run="site">Ανανέωση αναφορών</button></div></div>
+  <div class="srow"><div><h2>Επανανάλυση ιστορικού</h2><p class="desc">Μόνο μετά από ενημέρωση του προγράμματος.</p></div>
+   <div class="spanel"><p>Διαβάζει ξανά όλα τα ΦΕΚ όλων των νόμων με τον νεότερο αναλυτή. Μπορεί να διαρκέσει πάνω από μία ώρα.</p>
+    <button class="btn" data-run="history-rebuild">Επανανάλυση όλου του ιστορικού</button></div></div>
+ </section>
+
+ <section id="tab-help" class="hide help">
+  <div class="title"><div><h1>Βοήθεια</h1><p>Τι κάνει το FEK Watch και τι σημαίνει κάθε ετικέτα.</p></div></div>
+  <div class="srow"><div><h2>Πώς δουλεύει</h2><p class="desc">Με απλά λόγια.</p></div>
+   <div class="spanel"><p>Κάθε μέρα το FEK Watch διαβάζει τα νέα ΦΕΚ από το Εθνικό Τυπογραφείο και ελέγχει αν κάποιο αλλάζει τους νόμους
+    της λίστας σας. Ό,τι βρίσκει το καταγράφει με σύνδεσμο στη σωστή σελίδα του ΦΕΚ, ώστε να το ελέγξετε με ένα κλικ.</p>
+    <ul><li><b>Νόμοι</b>: οι νόμοι που παρακολουθείτε, με τη λίστα τροποποιήσεων και το ενοποιημένο κείμενο του καθενός.</li>
+    <li><b>Αναζήτηση</b>: λέξεις («πέργκολα»), ένας νόμος («ν. 4759/2020») ή ένα ΦΕΚ («Α 101/2018»).</li>
+    <li><b>Έλεγχος νέων ΦΕΚ</b>: κάνει αμέσως τον καθημερινό έλεγχο. Το αποτέλεσμα είναι τοπική προεπισκόπηση· την επόμενη φορά που
+     θα ανοίξετε την εφαρμογή αντικαθίσταται από τα επίσημα ευρήματα του GitHub.</li>
+    <li>Το <b>?</b> δίπλα σε μια ετικέτα εξηγεί τι σημαίνει: περάστε το ποντίκι από πάνω.</li></ul>
+    <p class="muted">Το εργαλείο είναι βοήθημα: πριν βασιστείτε σε ένα εύρημα, ανοίξτε το ΦΕΚ από τον σύνδεσμο.</p></div></div>
+  <div id="glossary"></div>
+ </section>
+</main>
+
+<nav class="mnav" aria-label="Πλοήγηση">
+ <a data-tab="laws" class="on"><svg><use href="#i-laws"/></svg>Νόμοι</a><a data-tab="search"><svg><use href="#i-search"/></svg>Αναζήτηση</a>
+ <a data-tab="tools"><svg><use href="#i-tools"/></svg>Εργαλεία</a><a data-tab="help"><svg><use href="#i-help"/></svg>Βοήθεια</a></nav>
+
+<script>
+const G=/*GLOSSARY*/null;
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const tip=k=>G[k]?`<span class="tip" tabindex="0" data-tip="${esc(G[k].text)}" aria-label="${esc(G[k].text)}">?</span>`:"";
+const fmt=d=>d?d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(0,4):"—";
+const plural=(n,one,many)=>`${n} ${n===1?one:many}`;
+let LAWS=[], timer=null;
+async function api(path, body){const r=await fetch(path, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
+ const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||r.statusText); return j;}
+
+function tab(name){$$("[data-tab]").forEach(a=>{const on=a.dataset.tab===name; a.classList.toggle("on",on); on?a.setAttribute("aria-current","page"):a.removeAttribute("aria-current");});
+ ["laws","search","tools","help"].forEach(t=>$("#tab-"+t).classList.toggle("hide",t!==name));
+ if(location.hash!=="#"+name) history.pushState(null,"","#"+name);}
+$$("[data-tab]").forEach(a=>{a.href="#"+a.dataset.tab; a.onclick=e=>{e.preventDefault(); tab(a.dataset.tab); if(a.dataset.tab==="search") search();};});
+$$("[data-tip-k]").forEach(s=>s.outerHTML=tip(s.dataset.tipK));
+
+function lawRow(l){
+ const menu=`<details class="menu"><summary aria-label="Περισσότερα για ${esc(l.key)}"><svg width="18" height="18"><use href="#i-more"/></svg></summary><div class="pop">
+   <button data-s="${esc(l.key)}">Αναζήτηση στον νόμο</button>
+   <button data-h="${esc(l.key)}">${l.history?"Ανανέωση ιστορικού":"Φόρτωση ιστορικού"}</button>
+   <button data-c="${esc(l.key)}">Νέα ενοποίηση</button><hr>
+   <button class="danger" data-r="${esc(l.key)}">Αφαίρεση από τη λίστα</button></div></details>`;
+ const acts=l.history
+  ? `${l.has_cons?`<a href="/site/laws/${l.slug}-consolidated.html" target="_blank">Ενοποιημένο κείμενο</a>`:""}${l.has_page?`<a href="/site/laws/${l.slug}.html" target="_blank">Τροποποιήσεις</a>`:""}`
+  : `<span class="pill warn">Χωρίς ιστορικό${tip("history")}</span><button class="btn" data-h="${esc(l.key)}">Φόρτωση</button>`;
+ const n=v=>v?v:`<span class="zero">0</span>`;
+ return `<tr><td class="c-id"><div class="law-key">${esc(l.key)}</div><div class="law-name">${esc(l.name)}</div></td>
+  <td class="num c-prov">${l.n_amend?plural(l.n_amend,"διάταξη","διατάξεις"):'<span class="zero">0</span>'}${l.n_feks?`<span class="sub">σε ${plural(l.n_feks,"ΦΕΚ","ΦΕΚ")}</span>`:""}</td>
+  <td class="num c-last">${l.last?`${fmt(l.last)}<span class="sub">ΦΕΚ ${esc(l.last_label)}</span>`:`<span class="zero">—</span>`}</td>
+  <td class="num c-refs">${n(l.n_other)}</td>
+  <td class="c-stats">${plural(l.n_feks,"ΦΕΚ","ΦΕΚ")} · ${plural(l.n_amend,"διάταξη","διατάξεις")} · ${plural(l.n_other,"αναφορά","αναφορές")}</td>
+  <td class="c-act"><div class="rowact">${acts}${menu}</div></td></tr>`;}
+
+async function loadLaws(){const d=await api("/api/laws"); LAWS=d.laws;
+ $("#lawrows").innerHTML=LAWS.map(lawRow).join("")||`<tr><td colspan="5" class="empty">Δεν παρακολουθείτε ακόμη κανέναν νόμο. Προσθέστε έναν από τη φόρμα παρακάτω.</td></tr>`;
+ const latest=LAWS.filter(l=>l.last).sort((a,b)=>b.last.localeCompare(a.last))[0];
+ const missing=LAWS.filter(l=>!l.history).length;
+ $("#finding").innerHTML=(latest?`Πιο πρόσφατη τροποποίηση: <b>${esc(latest.key)}</b> από το ΦΕΚ <b>${esc(latest.last_label)}</b>, ${fmt(latest.last)}.`:"Δεν έχει βρεθεί ακόμη τροποποίηση.")
+  +(missing?` ${missing===1?"Ένας νόμος δεν έχει":missing+" νόμοι δεν έχουν"} ακόμη ιστορικό.`:"");
+ $("#recent").innerHTML=d.recent.map(r=>`<li><span class="date num">${fmt(r.date)}</span>
+   <div><a class="fek" href="${esc(r.pdf)}" target="_blank">ΦΕΚ ${esc(r.fek)}</a><div class="what">${esc(r.act||"")} → ${esc(r.law)}</div></div>
+   <span class="n num">${plural(r.n,"διάταξη","διατάξεις")}</span></li>`).join("")||`<li class="empty">Καμία τροποποίηση ακόμη.</li>`;
+ $("#lastrun").textContent=d.last_run?new Date(d.last_run).toLocaleString("el-GR",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+ const cur=$("#f-law").value;
+ $("#f-law").innerHTML='<option value="">Όλοι οι νόμοι</option>'+LAWS.map(l=>`<option>${esc(l.key)}</option>`).join(""); $("#f-law").value=cur;
+ const closeMenu=b=>{const m=b.closest("details"); if(m) m.open=false;};
+ $$("[data-s]").forEach(b=>b.onclick=()=>{closeMenu(b); $("#f-law").value=b.dataset.s; setQ(""); tab("search"); search();});
+ $$("[data-h]").forEach(b=>b.onclick=()=>{closeMenu(b); run({cmd:"history",act:b.dataset.h});});
+ $$("[data-c]").forEach(b=>b.onclick=()=>{closeMenu(b); run({cmd:"consolidate",act:b.dataset.c});});
+ $$("[data-r]").forEach(b=>b.onclick=async()=>{closeMenu(b); if(!confirm("Αφαίρεση του "+b.dataset.r+" από τη λίστα; Τα δεδομένα του μένουν στον φάκελο data/.")) return;
+   syncNote(await api("/api/unwatch",{act:b.dataset.r})); loadLaws();});
+ const running=d.jobs.find(j=>j.status==="running"); if(running && !timer) follow(running.id);}
+document.addEventListener("click",e=>$$("details.menu[open]").forEach(m=>{if(!m.contains(e.target)) m.open=false;}));
+
+function syncNote(r){if(r && r.message) $("#syncmsg").textContent=r.message;}
+async function run(body){try{const {job}=await api("/api/run",body); follow(job);}catch(e){alert(e.message);}}
+function follow(id){$("#jobcard").classList.remove("hide"); clearInterval(timer);
+ const tick=async()=>{const j=await api("/api/jobs/"+id); $("#jobtitle").textContent=j.title;
+  const st={running:"Σε εξέλιξη",done:"Ολοκληρώθηκε",failed:"Απέτυχε"}[j.status]; $("#jobstatus").textContent=st;
+  $("#jobstatus").className="pill"+(j.status==="failed"?" warn":""); const L=$("#joblog"); L.textContent=j.log.join("\n")||"Ξεκινά…"; L.scrollTop=L.scrollHeight;
+  if(j.status!=="running"){clearInterval(timer); timer=null; loadLaws();}};
+ tick(); timer=setInterval(tick,1000);}
+$("#jobclose").onclick=()=>$("#jobcard").classList.add("hide");
+
+function setQ(v){$("#q").value=v; $("#q2").value=v;}
+function hl(text, q){let h=esc(text); q.split(/\s+/).filter(t=>t.length>1).forEach(t=>{
+  const re=new RegExp("("+t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"); h=h.replace(re,"<mark>$1</mark>");}); return h;}
+function tags(r){
+ const t=r.kind==="amendment"?(r.action_keys.length?r.action_keys:["modify"]).map(a=>`<span class="pill">${esc((G[a]||{}).label||a)}${tip(a)}</span>`)
+  :[`<span class="pill">${esc(r.kind_el)}${tip(r.kind)}</span>`];
+ if(r.inferred) t.push(`<span class="pill warn">συναγόμενο${tip("inferred")}</span>`);
+ return t.join("");}
+async function search(){const q=$("#q").value.trim(); tab("search");
+ const kinds=$$(".filters input[type=checkbox]:checked").map(c=>c.value).join(",");
+ const p=new URLSearchParams({q, law:$("#f-law").value, article:$("#f-art").value.trim(), year:$("#f-year").value.trim(), kinds});
+ $("#count").textContent="Αναζήτηση…";
+ const d=await api("/api/search?"+p);
+ const scope=q?`για «${q}»`:"";
+ $("#count").textContent=d.total?`${plural(d.total,"αποτέλεσμα","αποτελέσματα")} ${scope}${d.total>d.results.length?` · εμφανίζονται τα ${d.results.length} πιο πρόσφατα`:""}`.replace(/\s+·/," ·")
+  :`Κανένα αποτέλεσμα ${scope}.`;
+ $("#results").innerHTML=d.results.map(r=>`<details class="res"><summary>
+   <div class="r-line"><a class="fek" href="${esc(r.pdf)}" target="_blank" onclick="event.stopPropagation()">ΦΕΚ ${esc(r.fek)}</a>
+    <span class="muted num">${fmt(r.date)}</span><span class="muted">${esc(r.act||"")}${r.where?" · "+esc(r.where):""}</span>
+    <span>${esc(r.law)}${r.target?" → <b>"+esc(r.target)+"</b>":""}</span></div>
+   <div class="r-tags">${tags(r)}</div>
+   <div class="r-title">${esc(r.title)}</div></summary><div class="r-text">${hl(r.text,q)}</div></details>`).join("")
+  ||`<div class="empty">Δοκιμάστε λιγότερες λέξεις, άλλο έτος ή περισσότερα είδη ευρημάτων.
+     <div class="examples">${["πέργκολα","αυθαίρετα","ν. 4759/2020","Α 101/2018"].map(x=>`<button class="btn" data-ex="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>`;
+ $$("[data-ex]").forEach(b=>b.onclick=()=>{setQ(b.dataset.ex); search();});
+ lookup(q);}
+async function lookup(q){const box=$("#lookup"); box.innerHTML=""; if(!/\d+\s*\/\s*\d{2,4}/.test(q) && !/^\s*(κ\.?υ\.?α|υ\.?α|ΚΥΑ|ΥΑ)/i.test(q)) return;
+ if(/^\s*[ΑΒΓΔA-D]\S*\s+\d+\s*\/\s*\d{4}\s*$/i.test(q) && !/^\s*(ν|π|Ν|Π)/.test(q)){
+  box.innerHTML=`<div class="lookup"><div>Ψάχνετε το ΦΕΚ <b>${esc(q)}</b>; Δείτε τι αλλάζει στους νόμους σας.</div><button class="btn" id="lk-fek">Ανάλυση του ΦΕΚ</button></div>`;
+  $("#lk-fek").onclick=()=>run({cmd:"fek",label:q}); return;}
+ try{const d=await api("/api/lookup?q="+encodeURIComponent(q)); if(!d.is_act) return;
+  box.innerHTML=`<div class="lookup"><div><b>${esc(d.key)}</b>
+   ${d.fek?` · <a href="${esc(d.pdf)}" target="_blank">ΦΕΚ ${esc(d.fek)}</a> <span class="muted num">${fmt(d.date)}</span>`:` <span class="muted">· δεν βρέθηκε στο search.et.gr</span>`}
+   <div class="muted">${esc(d.title||"")}</div></div>
+   ${d.watched?'<span class="pill">Παρακολουθείται</span>':(d.fek?'<button class="btn" id="lk-add">Παρακολούθηση</button>':"")}</div>`;
+  if($("#lk-add")) $("#lk-add").onclick=async()=>{syncNote(await api("/api/watch",{act:d.key,name:d.title||""})); await loadLaws(); run({cmd:"history",act:d.key});};
+ }catch(e){}}
+$("#sf").onsubmit=e=>{e.preventDefault(); $("#q2").value=$("#q").value; search();};
+$("#sf2").onsubmit=e=>{e.preventDefault(); $("#q").value=$("#q2").value; search();};
+$$(".filters input, .filters select").forEach(el=>el.onchange=search);
+$("#all-amend").onclick=e=>{e.preventDefault(); $("#f-law").value=""; setQ(""); search();};
+$("#b-daily").onclick=()=>run({cmd:"daily"});
+$("#addf").onsubmit=async e=>{e.preventDefault(); try{const r=await api("/api/watch",{act:$("#a-act").value,name:$("#a-name").value,aliases:$("#a-alias").value});
+ syncNote(r); e.target.reset(); await loadLaws(); run({cmd:"history",act:r.key});}catch(err){alert(err.message);}};
+$("#fekf").onsubmit=e=>{e.preventDefault(); run({cmd:"fek",label:$("#fek").value.trim()});};
+$$("[data-run]").forEach(b=>b.onclick=()=>{const k=b.dataset.run;
+ if(k==="history-rebuild") run({cmd:"history",act:"all",rebuild:true}); else run({cmd:k,act:"all"});});
+$$("label.chip[data-k]").forEach(l=>l.insertAdjacentHTML("beforeend", tip(l.dataset.k)));
+$$("label.chip .tip").forEach(t=>t.onclick=e=>e.preventDefault());
+const groups=[["Τι βρέθηκε","Το είδος κάθε ευρήματος.",["amendment","derogation","reference","quoted","mention"]],
+ ["Τι κάνει η τροποποίηση","Οι ετικέτες δίπλα σε κάθε διάταξη.",["replace","add","repeal","delete","modify","renumber","extend","suspend","interpret","correct"]],
+ ["Βεβαιότητα","Πότε χρειάζεται δεύτερη ματιά.",["inferred"]],
+ ["Ενοποιημένο κείμενο","Ό,τι βλέπετε στο ενοποιημένο κείμενο.",["applied","restated","review","whole_act","nontextual","changed","note","previous","experimental"]],
+ ["Είδη πράξεων","Τι μπορεί να παρακολουθηθεί.",["decision"]],
+ ["Στήλες","Οι αριθμοί στον πίνακα των νόμων.",["n_feks","n_amend","last","n_other","history","crosscheck"]]];
+$("#glossary").innerHTML=groups.map(([t,d,ks])=>`<div class="srow"><div><h2>${t}</h2><p class="desc">${d}</p></div><div class="spanel"><dl>`+
+ ks.map(k=>`<dt>${esc(G[k].label)}</dt><dd>${esc(G[k].text)}</dd>`).join("")+"</dl></div></div>").join("");
+function fromHash(){const h=location.hash.slice(1); tab(["laws","search","tools","help"].includes(h)?h:"laws"); if(h==="search") search();}
+addEventListener("hashchange",fromHash); fromHash();
+loadLaws();
+</script></body></html>

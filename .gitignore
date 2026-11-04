@@ -5,3 +5,4 @@ __pycache__/
 *.part
 *.tmp
 .pytest_cache/
+.taste-skill/

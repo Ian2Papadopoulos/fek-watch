@@ -15,6 +15,9 @@ fekwatch = "fekwatch.cli:main"
 [tool.setuptools]
 packages = ["fekwatch"]
 
+[tool.setuptools.package-data]
+fekwatch = ["ui_page.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
