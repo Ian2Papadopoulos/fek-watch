@@ -252,10 +252,44 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(j or {"error": "not found"}, 200 if j else 404)
             elif u.path.startswith("/site/"):
                 self._static(unquote(u.path[len("/site/"):]))
+            elif u.path == "/pdf":
+                self._pdf(qs.get("u", ""), download=qs.get("dl") == "1")
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as exc:  # noqa: BLE001
             self._json({"error": str(exc)}, 500)
+
+    def _pdf(self, url: str, download: bool):
+        """Relay a FEK PDF of the Printing Office as application/pdf, so the browser can show it (at #page=N)."""
+        from .pdflinks import PDF_HOST, check_url, filename
+        path = check_url(url)
+        if not path:
+            self._json({"error": "not a FEK PDF"}, 400)
+            return
+        disp = f"{'attachment' if download else 'inline'}; filename=\"{filename(path)}\""
+        cached = self.root / "cache" / "pdf" / path
+        if cached.is_file():
+            data = cached.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", disp)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        import requests
+        with requests.get(PDF_HOST + path, stream=True, timeout=60) as r:
+            if r.status_code != 200:
+                self._json({"error": f"search.et.gr: {r.status_code}"}, 502)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", disp)
+            if r.headers.get("Content-Length"):
+                self.send_header("Content-Length", r.headers["Content-Length"])
+            self.end_headers()
+            for chunk in r.iter_content(256 * 1024):
+                self.wfile.write(chunk)
 
     def _static(self, rel: str):
         base = (self.root / "site").resolve()
@@ -336,4 +370,5 @@ def serve(root: Path, port: int = 8765, open_browser: bool = True):
 # --------------------------------------------------------------------------- page
 
 def page() -> str:
-    return Path(__file__).with_name("ui_page.html").read_text(encoding="utf-8")
+    from .pdflinks import snippet
+    return Path(__file__).with_name("ui_page.html").read_text(encoding="utf-8").replace("</body>", snippet() + "</body>")

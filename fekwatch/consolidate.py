@@ -1314,6 +1314,7 @@ def _collect_notes(u: Unit, acc: list[Note]):
 
 def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
     from .report import CSS, FONT_LINK, _fmt_date, bar
+    from .pdflinks import snippet as pdf_snippet
     from .glossary import TIP_CSS, legend_html, tip
     law = res.law
     st = res.stats()
@@ -1392,7 +1393,7 @@ def render_html(w: WatchedAct, res: Result, updated: str | None = None) -> str:
     return (f"<!doctype html><html lang=\"el\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{_e(w.key)} — ενοποιημένο κείμενο</title>"
             f"{FONT_LINK}<style>{CSS}{CONS_CSS}{TIP_CSS}</style></head><body>"
-            f"{bar('../', [('Τροποποιήσεις ' + w.key, w.slug + '.html')])}<main>{''.join(parts)}</main></body></html>")
+            f"{bar('../', [('Τροποποιήσεις ' + w.key, w.slug + '.html')])}<main>{''.join(parts)}</main>{pdf_snippet()}</body></html>")
 
 
 def _any_notes(u: Unit) -> bool:

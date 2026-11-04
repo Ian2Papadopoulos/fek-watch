@@ -7,6 +7,7 @@ cache/                     PDFs and extracted text (re-creatable, not versioned)
 """
 from __future__ import annotations
 
+import re
 import gzip
 import json
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from pathlib import Path
 
 from .pdftext import ExtractedDoc
 
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 EXTRACT_VERSION = 1
 
 
@@ -93,7 +95,12 @@ class Store:
         if not p.exists():
             return None
         with gzip.open(p, "rt", encoding="utf-8") as fh:
-            return ExtractedDoc.from_json(json.load(fh))
+            d = json.load(fh)
+        # Text extracted before fonts without a character map were decoded holds control characters:
+        # extract it again (fekwatch.glyphmap).
+        if any(_CONTROL_RE.search(p["text"]) for p in d.get("paragraphs", [])):
+            return None
+        return ExtractedDoc.from_json(d)
 
     def put_extracted(self, et_id: int, doc: ExtractedDoc) -> None:
         p = self._extract_path(et_id)

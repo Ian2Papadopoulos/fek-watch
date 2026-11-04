@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Monitor the Greek Government Gazette (ΦΕΚ) for amendments to selected laws, list every amending FEK, and build checkable consolidated texts."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["requests>=2.31,<3", "pymupdf>=1.24,<3", "tzdata; sys_platform == \"win32\""]
+dependencies = ["requests>=2.31,<3", "pymupdf>=1.24,<3", "fonttools>=4.40,<5", "tzdata; sys_platform == \"win32\""]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -16,7 +16,7 @@ fekwatch = "fekwatch.cli:main"
 packages = ["fekwatch"]
 
 [tool.setuptools.package-data]
-fekwatch = ["ui_page.html"]
+fekwatch = ["ui_page.html", "fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

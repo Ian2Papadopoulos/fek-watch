@@ -20,6 +20,7 @@ from statistics import median
 
 import pymupdf
 
+from .glyphmap import CONTROL_RE, decode, page_decoders
 from .normalize import join_lines, normalize_chars
 
 HEADER_ZONE_Y = 82.0  # running header lives above this y on every page
@@ -95,10 +96,30 @@ def _is_bold(span: dict) -> bool:
     return bool(span.get("flags", 0) & 16) or any(k in font for k in ("Bold", "Semibold", "Black", "Heavy"))
 
 
+UNREADABLE = "[μη αναγνώσιμο κείμενο]"
+_UNREADABLE_RE = re.compile(r"(?:\[μη αναγνώσιμο κείμενο\]\s*)+")
+
+
+def _fix_unmapped(d: dict, page: pymupdf.Page) -> None:
+    """Spans of fonts without a character map come out as glyph numbers (control characters).
+    Decode them from the glyph shapes (fekwatch.glyphmap); what cannot be decoded is marked, never kept as noise."""
+    spans = [s for b in d["blocks"] if b.get("type") == 0 for l in b["lines"] for s in l["spans"]]
+    broken = {s["font"] for s in spans if CONTROL_RE.search(s["text"])}
+    if not broken:
+        return
+    decoders = page_decoders(page, broken)
+    for s in spans:
+        if s["font"] in decoders:
+            s["text"] = decode(s["text"], decoders[s["font"]])
+        elif s["font"] in broken:
+            s["text"] = UNREADABLE + " "
+
+
 def _page_lines(page: pymupdf.Page, pno: int) -> list[Line]:
     out: list[Line] = []
     # Exclude images: some issues embed huge scanned maps, and decoding them is very slow.
     d = page.get_text("dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+    _fix_unmapped(d, page)
     for block in d["blocks"]:
         if block.get("type") != 0:
             continue
@@ -106,7 +127,8 @@ def _page_lines(page: pymupdf.Page, pno: int) -> list[Line]:
             spans = [s for s in line["spans"] if s["text"].strip()]
             if not spans:
                 continue
-            text = normalize_chars("".join(s["text"] for s in line["spans"])).strip()
+            text = _UNREADABLE_RE.sub(f"[μη αναγνώσιμο κείμενο, βλ. σελ. {pno} του ΦΕΚ] ",
+                                      normalize_chars("".join(s["text"] for s in line["spans"]))).strip()
             if not text:
                 continue
             total = sum(len(s["text"].strip()) for s in spans) or 1
@@ -202,12 +224,18 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
             reprinted = True
         lines = _filter_lines(raw, first_page=(pno == 1))
         lines = _order_lines(lines, page.rect.width)
+        # one marker for a run of unreadable lines (a table in an undecodable font)
+        lines = [l for k, l in enumerate(lines)
+                 if not (k and l.text.startswith("[μη αναγνώσιμο") and l.text == lines[k - 1].text)]
         margins_by_page[pno] = _margins(lines)
         page_texts[pno] = "\n".join(l.text for l in lines)
         all_lines += lines
     page_count = doc.page_count
     doc.close()
     paras = _build_paragraphs(all_lines, margins_by_page)
+    # one marker for a run of unreadable paragraphs (a table in an undecodable font)
+    paras = [p for k, p in enumerate(paras)
+             if not (k and p.text.startswith("[μη αναγνώσιμο") and p.text == paras[k - 1].text)]
     _mark_toc(paras)
     return ExtractedDoc(paragraphs=paras, page_count=page_count, reprinted=reprinted, page_texts=page_texts)
 

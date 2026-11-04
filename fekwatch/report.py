@@ -11,6 +11,7 @@ from pathlib import Path
 from .citations import ACTION_LABELS_EL, Locator, find_mentions
 from .config import Config, WatchedAct
 from .store import Store, now_iso
+from .pdflinks import snippet as pdf_snippet
 from .glossary import KIND_KEYS, ACTION_KEYS, TIP_CSS, legend_html, tip
 
 KIND_LABEL = {
@@ -98,7 +99,7 @@ def _page(title: str, body: str, rel: str = "", updated: str | None = None) -> s
             f"{body}"
             f"<p class=\"small muted\" style=\"margin-top:40px\">Δεδομένα: {esc((updated or now_iso())[:16].replace('T', ' '))} UTC · fek-watch. "
             f"Πηγή: Εθνικό Τυπογραφείο (search.et.gr). Ο αυτόματος εντοπισμός μπορεί να έχει σφάλματα — "
-            f"ελέγχετε πάντα το ΦΕΚ (κάθε εύρημα έχει σύνδεσμο στη σελίδα του PDF).</p></main></body></html>")
+            f"ελέγχετε πάντα το ΦΕΚ (κάθε εύρημα έχει σύνδεσμο στη σελίδα του PDF).</p></main>{pdf_snippet()}</body></html>")
 
 
 def _fmt_date(d: str | None) -> str:
