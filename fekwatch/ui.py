@@ -260,9 +260,14 @@ class Handler(BaseHTTPRequestHandler):
                 act = b.get("act", "")
                 aliases = [a.strip() for a in (b.get("aliases") or "").split(";") if a.strip()]
                 w = cfgmod.add_law_to_file(self.root, act, b.get("name", ""), aliases)
-                self._json({"ok": True, "key": w.key})
+                from .sync import push_watchlist
+                pushed, msg = push_watchlist(self.root)
+                self._json({"ok": True, "key": w.key, "pushed": pushed, "message": msg})
             elif u.path == "/api/unwatch":
-                self._json({"ok": cfgmod.remove_law_from_file(self.root, b.get("act", ""))})
+                ok = cfgmod.remove_law_from_file(self.root, b.get("act", ""))
+                from .sync import push_watchlist
+                pushed, msg = push_watchlist(self.root) if ok else (False, "")
+                self._json({"ok": ok, "pushed": pushed, "message": msg})
             elif u.path == "/api/run":
                 cmd = b.get("cmd")
                 act = b.get("act") or "all"
@@ -277,6 +282,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not re.match(r"^\s*\S+\s*\d+\s*/\s*\d{4}\s*$", label):
                         raise ValueError("Γράψτε το ΦΕΚ στη μορφή «Α 101/2018».")
                     args, title = ["fek", label], f"Ανάλυση ΦΕΚ {label}"
+                elif cmd == "sync":
+                    args, title = ["sync"], "Συγχρονισμός με το GitHub"
                 elif cmd == "site":
                     args, title = ["site"], "Ανανέωση αναφορών"
                 else:
@@ -357,6 +364,7 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
 <section id="tab-laws">
  <div class="row" style="justify-content:space-between"><h2>Παρακολουθούμενοι νόμοι</h2>
   <div class="row"><button id="b-daily">Έλεγχος νέων ΦΕΚ τώρα</button><a href="/site/index.html" target="_blank">Πλήρης αναφορά ↗</a></div></div>
+ <div id="syncmsg" class="small muted"></div>
  <div class="grid" id="laws"></div>
  <div class="card"><h3>Προσθήκη νόμου</h3>
   <form id="addf" class="row" style="margin-top:8px">
@@ -388,6 +396,7 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
   <form id="fekf" class="row" style="margin-top:8px"><input type="text" id="fek" placeholder="π.χ. Α 101/2018" required style="width:170px">
   <button>Ανάλυση</button><span class="small muted">Δείχνει τις διατάξεις του ΦΕΚ που αφορούν τους παρακολουθούμενους νόμους.</span></form></div>
  <div class="card"><h3>Συντήρηση</h3><div class="row" style="margin-top:8px">
+  <button class="sec" data-run="sync">Συγχρονισμός με το GitHub</button>
   <button class="sec" data-run="consolidate">Ανανέωση ενοποιημένων κειμένων</button>
   <button class="sec" data-run="site">Ανανέωση αναφορών</button>
   <button class="sec" data-run="history-rebuild">Επανανάλυση όλου του ιστορικού</button></div></div>
@@ -399,7 +408,10 @@ label.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px}
   της λίστας σας. Ό,τι βρίσκει το καταγράφει με σύνδεσμο στη σωστή σελίδα του ΦΕΚ, ώστε να το ελέγξετε με ένα κλικ.</p>
   <ul><li><b>Νόμοι</b>: οι νόμοι που παρακολουθείτε, με σύνδεσμο στη λίστα τροποποιήσεων και στο ενοποιημένο κείμενο.</li>
   <li><b>Αναζήτηση</b>: ψάξτε λέξεις («πέργκολα»), έναν νόμο («ν. 4759/2020») ή ένα ΦΕΚ («Α 101/2018»).</li>
-  <li><b>Έλεγχος νέων ΦΕΚ τώρα</b>: κάνει αμέσως τον καθημερινό έλεγχο (γίνεται και αυτόματα στο GitHub).</li>
+  <li><b>Έλεγχος νέων ΦΕΚ τώρα</b>: κάνει αμέσως τον καθημερινό έλεγχο (γίνεται και αυτόματα στο GitHub). Το αποτέλεσμα είναι τοπική
+   προεπισκόπηση: την επόμενη φορά που θα ανοίξετε την εφαρμογή, αντικαθίσταται από τα επίσημα ευρήματα του GitHub.</li>
+  <li><b>Συγχρονισμός με το GitHub</b>: γίνεται αυτόματα κάθε φορά που ανοίγετε την εφαρμογή. Στέλνει τη λίστα
+   νόμων σας στο GitHub (ώστε ο καθημερινός έλεγχος να τους παρακολουθεί) και φέρνει τα νέα ευρήματα.</li>
   <li>Το <b>?</b> δίπλα σε κάθε ετικέτα εξηγεί τι σημαίνει· περάστε το ποντίκι από πάνω.</li></ul>
   <p class="small muted">Το εργαλείο είναι βοήθημα: πριν βασιστείτε σε ένα εύρημα, ανοίξτε το ΦΕΚ από τον σύνδεσμο.</p></div>
  <div class="card help" id="glossary"></div>
@@ -439,9 +451,10 @@ async function loadLaws(){const d=await api("/api/laws"); LAWS=d.laws;
  $$("[data-h]").forEach(a=>a.onclick=e=>{e.preventDefault(); run({cmd:"history",act:a.dataset.h});});
  $$("[data-c]").forEach(a=>a.onclick=e=>{e.preventDefault(); run({cmd:"consolidate",act:a.dataset.c});});
  $$("[data-r]").forEach(a=>a.onclick=async e=>{e.preventDefault(); if(!confirm("Αφαίρεση του "+a.dataset.r+" από τη λίστα; Τα δεδομένα του μένουν στον φάκελο data/.")) return;
-   await api("/api/unwatch",{act:a.dataset.r}); loadLaws();});
+   const r=await api("/api/unwatch",{act:a.dataset.r}); syncNote(r); loadLaws();});
  const running=d.jobs.find(j=>j.status==="running"); if(running && !timer) follow(running.id);}
 
+function syncNote(r){if(r && r.message) $("#syncmsg").innerHTML=(r.pushed?"✓ ":"⚠ ")+esc(r.message);}
 async function run(body){try{const {job}=await api("/api/run",body); follow(job);}catch(e){alert(e.message);}}
 function follow(id){$("#jobcard").classList.remove("hide"); clearInterval(timer);
  const tick=async()=>{const j=await api("/api/jobs/"+id); $("#jobtitle").textContent=j.title;
@@ -476,13 +489,13 @@ async function lookup(q){const box=$("#lookup"); box.innerHTML=""; if(!/\d+\s*\/
    ${d.fek?` · <a href="${esc(d.pdf)}" target="_blank">ΦΕΚ ${esc(d.fek)}</a> (${fmt(d.date)})`:" · δεν βρέθηκε στο search.et.gr"}
    <div class="small muted">${esc(d.title||"")}</div></div>
    ${d.watched?'<span class="badge">παρακολουθείται</span>':(d.fek?'<button id="lk-add">Παρακολούθηση και φόρτωση ιστορικού</button>':"")}</div></div>`;
-  if($("#lk-add")) $("#lk-add").onclick=async()=>{await api("/api/watch",{act:d.key,name:d.title||""}); await loadLaws(); run({cmd:"history",act:d.key});};
+  if($("#lk-add")) $("#lk-add").onclick=async()=>{syncNote(await api("/api/watch",{act:d.key,name:d.title||""})); await loadLaws(); run({cmd:"history",act:d.key});};
  }catch(e){}}
 $("#sf").onsubmit=e=>{e.preventDefault(); search();};
 $$(".filters input, .filters select").forEach(el=>el.onchange=search);
 $("#b-daily").onclick=()=>run({cmd:"daily"});
 $("#addf").onsubmit=async e=>{e.preventDefault(); try{const r=await api("/api/watch",{act:$("#a-act").value,name:$("#a-name").value,aliases:$("#a-alias").value});
- e.target.reset(); await loadLaws(); run({cmd:"history",act:r.key});}catch(err){alert(err.message);}};
+ syncNote(r); e.target.reset(); await loadLaws(); run({cmd:"history",act:r.key});}catch(err){alert(err.message);}};
 $("#fekf").onsubmit=e=>{e.preventDefault(); run({cmd:"fek",label:$("#fek").value.trim()});};
 $$("[data-run]").forEach(b=>b.onclick=()=>{const k=b.dataset.run;
  if(k==="history-rebuild") run({cmd:"history",act:"all",rebuild:true}); else run({cmd:k,act:"all"});});

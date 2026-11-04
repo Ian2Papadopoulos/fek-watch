@@ -62,6 +62,8 @@ jobs:
           COMMAND: ${{ github.event.inputs.command || 'daily' }}
           ACT: ${{ github.event.inputs.act || 'all' }}
         run: |
+          # a law added from the app gets its full history on the first run after it was pushed
+          if [ "$COMMAND" = "daily" ]; then python -m fekwatch history all --missing; fi
           if [ "$COMMAND" = "daily" ] || [ "$COMMAND" = "site" ]; then
             python -m fekwatch "$COMMAND"
           else

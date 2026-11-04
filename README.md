@@ -105,6 +105,17 @@ A page opens at http://127.0.0.1:8765, reachable only from your own computer. Fr
   progress shown on the page;
 - open the amendment list and the consolidated text of each law.
 
+**Staying in step with GitHub.** The launcher first runs `python -m fekwatch sync`, which:
+
+- commits your watchlist edits (and the history of a law you added and loaded locally) and pushes them, so
+  the daily GitHub run follows the same laws (it loads the history of a newly added law on its next run);
+- replaces local results in `data/` and `site/` with the official ones from GitHub (what you ran locally is
+  a preview; the GitHub run is the record);
+- pulls, and if the watchlist changed on both sides keeps the laws of both.
+
+Adding or removing a law in the app also pushes the watchlist right away. Pushing needs the computer to be
+signed in to GitHub (the same login used to clone). Without that, the change stays local and the page says so.
+
 ## Using it locally
 
 ```bash

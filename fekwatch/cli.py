@@ -58,6 +58,9 @@ def cmd_history(args):
     from . import report
     cfg, store, client = _ctx(args)
     acts = [w.key for w in cfg.laws] if args.act == "all" else [args.act]
+    if args.missing:  # only laws whose history was never loaded (e.g. just added from the app)
+        acts = [a for a in acts if not store.load_law(_watched(cfg, a).slug, _watched(cfg, a).key).get("history")]
+        print(f"Laws without history: {', '.join(acts) or 'none'}")
     for act in acts:
         w = _watched(cfg, act)
 
@@ -160,7 +163,16 @@ def cmd_site(args):
 
 def cmd_watch(args):
     root = Path(args.root).resolve()
-    if args.action == "add":
+    if args.action == "merge":  # add the laws of another watchlist file (e.g. a saved copy)
+        from .sync import merge_watchlists, watchlist_keys
+        path = root / "watchlist.toml"
+        cur = path.read_text(encoding="utf-8") if path.exists() else ""
+        other = Path(args.act).read_text(encoding="utf-8")
+        new = merge_watchlists(cur, other)
+        added = [k for k in watchlist_keys(new) if k not in watchlist_keys(cur)]
+        path.write_text(new, encoding="utf-8")
+        print(f"Added: {', '.join(added) or 'nothing new'}")
+    elif args.action == "add":
         w = cfgmod.add_law_to_file(root, args.act, args.name or "", args.alias or [])
         print(f"Watching {w.key}. Run:  python -m fekwatch history \"{w.key}\"  to load its amendment history.")
     else:
@@ -192,6 +204,13 @@ def cmd_consolidate(args):
     return 0
 
 
+def cmd_sync(args):
+    from .sync import sync
+    for m in sync(Path(args.root).resolve()):
+        print(m)
+    return 0
+
+
 def cmd_ui(args):
     from .ui import serve
     serve(Path(args.root).resolve(), port=args.port, open_browser=not args.no_browser)
@@ -212,6 +231,7 @@ def main(argv=None):
     p = sub.add_parser("history", help="find all FEKs that amend an act (backfill)")
     p.add_argument("act", help='e.g. "ν. 4495/2017" or "all"')
     p.add_argument("--rebuild", action="store_true", help="re-analyse from scratch (after parser updates)")
+    p.add_argument("--missing", action="store_true", help="only acts whose history was never loaded")
     p.set_defaults(func=cmd_history)
 
     p = sub.add_parser("list", help="list stored amendments of an act")
@@ -236,12 +256,15 @@ def main(argv=None):
     p.add_argument("--no-browser", action="store_true")
     p.set_defaults(func=cmd_ui)
 
+    p = sub.add_parser("sync", help="send watchlist edits to GitHub and pull the official results")
+    p.set_defaults(func=cmd_sync)
+
     p = sub.add_parser("site", help="regenerate the HTML report")
     p.set_defaults(func=cmd_site)
 
     p = sub.add_parser("watch", help="list or add watched acts")
-    p.add_argument("action", choices=["list", "add"])
-    p.add_argument("act", nargs="?")
+    p.add_argument("action", choices=["list", "add", "merge"])
+    p.add_argument("act", nargs="?", help="act to add, or for merge: a watchlist file")
     p.add_argument("--name")
     p.add_argument("--alias", action="append")
     p.set_defaults(func=cmd_watch)
